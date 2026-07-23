@@ -7,6 +7,7 @@ import os
 import hashlib
 from datetime import datetime
 import textwrap
+pip install google-generativeai
 
 # Tenta importar o pacote do Gemini (pip install google-generativeai)
 try:
