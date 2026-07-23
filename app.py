@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
 
 # Conecta ao seu banco de dados no Google Drive
-DB_PATH = 'financehub.db'
+DB_PATH = 'financehub_v2.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
 from sqlalchemy import Column, Integer, String, Float, Date
 from sqlalchemy.orm import declarative_base
