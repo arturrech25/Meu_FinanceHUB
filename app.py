@@ -338,7 +338,8 @@ elif menu == "Metas & Custos Fixos":
             if not assinaturas_comuns:
                 st.warning("Sua lista de assinaturas conhecidas está vazia. Adicione termos abaixo.")
             else:
-                padrao = '|'.join(assinaturas_comuns)
+                # O \b garante que ele só encontre palavras inteiras, ignorando pedaços como 'oi' em 'goimage'
+                padrao = r'\b(' + '|'.join(assinaturas_comuns) + r')\b'
                 df_assinaturas = df[df['description'].str.lower().str.contains(padrao, na=False, regex=True)]
                 
                 assinaturas = df_assinaturas.groupby('description').agg(
@@ -372,6 +373,18 @@ elif menu == "Metas & Custos Fixos":
                             db.commit()
                             st.success(f"'{nova_sub}' adicionado!")
                             st.rerun()
+                            
+                with col_del:
+                    st.write("**Remover Assinatura da Lista**")
+                    df_regras_sub = pd.read_sql("SELECT id, keyword as 'Assinatura' FROM subscription_rules ORDER BY keyword", engine)
+                    st.dataframe(df_regras_sub, use_container_width=True, hide_index=True, height=150)
+                    
+                    sub_id_del = st.number_input("ID do item para excluir da lista:", min_value=0, step=1)
+                    if st.button("Excluir Assinatura") and sub_id_del > 0:
+                        db.query(SubscriptionRule).filter_by(id=sub_id_del).delete()
+                        db.commit()
+                        st.success("Item removido da lista!")
+                        st.rerun()
                             
                 with col_del:
                     st.write("**Remover Assinatura da Lista**")
