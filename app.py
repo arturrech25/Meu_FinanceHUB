@@ -79,7 +79,7 @@ def render_metric_card(title, value, subtitle=""):
 # ==========================================
 # BANCO DE DADOS
 # ==========================================
-DB_PATH = 'financehub_v7.db'
+DB_PATH = 'financehub_v8.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
 Base = declarative_base()
 
@@ -105,6 +105,12 @@ class Budget(Base):
     category = Column(String, unique=True, nullable=False)
     limit_amount = Column(Float, nullable=False)
 
+# Tabela para gerenciar as Assinaturas Conhecidas
+class SubscriptionRule(Base):
+    __tablename__ = 'subscription_rules'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    keyword = Column(String, unique=True, nullable=False)
+
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(bind=engine)
 
@@ -117,6 +123,23 @@ def seed_rules():
         }
         for kw, cat in regras_iniciais.items():
             db.add(CategoryRule(keyword=kw, category=cat))
+        db.commit()
+
+    if db.query(SubscriptionRule).count() == 0:
+        assinaturas_iniciais = [
+            'netflix', 'spotify', 'amazon prime', 'prime video', 'globoplay', 'disney', 'star+', 'max', 'hbo',
+            'apple tv', 'paramount', 'crunchyroll', 'youtube premium', 'youtube music', 'apple music', 'deezer', 'amazon music',
+            'google one', 'icloud', 'microsoft', 'office 365', 'dropbox', 'adobe', 'canva', 'chatgpt', 'openai', 'notion', 'zoom',
+            'smart fit', 'bluefit', 'gympass', 'wellhub', 'totalpass',
+            'claro', 'vivo', 'tim', 'oi',
+            'ifood', 'rappi', 'ze delivery',
+            'xbox', 'playstation', 'nintendo',
+            'sem parar', 'veloe', 'conectcar',
+            'mercado livre', 'meli+', 'wine', 'tag livros', 'folha', 'estadao', 'o globo',
+            'tinder', 'duolingo', 'babbel'
+        ]
+        for sub in assinaturas_iniciais:
+            db.add(SubscriptionRule(keyword=sub))
         db.commit()
     db.close()
 seed_rules()
@@ -203,11 +226,10 @@ if menu == "Dashboard":
                 
                 # --- AG-GRID: TABELA DE ALTA PERFORMANCE ---
                 with st.expander("🛠️ Modo Planilha: Editar Histórico e Exportar", expanded=False):
-                    st.markdown("<p style='color: #FF8A00; font-size: 14px;'>De duplo-clique na coluna 'Categoria' para alterar os dados. Depois clique em Salvar.</p>", unsafe_allow_html=True)
+                    st.markdown("<p style='color: #FF8A00; font-size: 14px;'>Dê um duplo clique na coluna 'Categoria' para alterar os dados. Depois clique em Salvar.</p>", unsafe_allow_html=True)
                     df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
                     df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
                     
-                    # Configurando o Ag-Grid
                     gb = GridOptionsBuilder.from_dataframe(df_mostrar)
                     gb.configure_column("id", hide=True)
                     gb.configure_column("type", hide=True)
@@ -228,7 +250,6 @@ if menu == "Dashboard":
                         if st.button("💾 Salvar Edições do Ag-Grid", type="primary", use_container_width=True):
                             db = SessionLocal()
                             alteracoes = 0
-                            # Pega os dados que voltaram da tabela editada
                             df_editado = pd.DataFrame(grid_response['data'])
                             for index, row in df_editado.iterrows():
                                 old_cat = df_mostrar.loc[index, 'category']
@@ -292,10 +313,8 @@ elif menu == "Metas & Custos Fixos":
                         gasto = df_mes_atual[df_mes_atual['category'] == meta.category]['amount'].sum()
                         limite = meta.limit_amount
                         pct = min((gasto / limite) * 100, 100) if limite > 0 else 100
-                        
                         cor_barra = "#48BB78" if pct < 75 else ("#F6E05E" if pct < 90 else "#F56565")
                         
-                        # Componente de Barra de Progresso HTML customizada
                         html_bar = f"""
                         <div style='margin-bottom: 15px;'>
                             <div style='display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px;'>
@@ -311,46 +330,60 @@ elif menu == "Metas & Custos Fixos":
 
         with tab2:
             st.subheader("Radar de Assinaturas e Serviços")
-            st.write("Buscando pelas assinaturas mais comuns do Brasil no seu histórico...")
             
-            # Lista de palavras-chave das 50 assinaturas mais comuns
-            assinaturas_comuns = [
-                'netflix', 'spotify', 'amazon prime', 'prime video', 'globoplay', 'disney', 'star+', 'max', 'hbo',
-                'apple tv', 'paramount', 'crunchyroll', 'youtube premium', 'youtube music', 'apple music', 'deezer', 'amazon music',
-                'google one', 'icloud', 'microsoft', 'office 365', 'dropbox', 'adobe', 'canva', 'chatgpt', 'openai', 'notion', 'zoom',
-                'smart fit', 'bluefit', 'gympass', 'wellhub', 'totalpass',
-                'claro', 'vivo', 'tim', 'oi',
-                'ifood', 'rappi', 'ze delivery',
-                'xbox', 'playstation', 'nintendo',
-                'sem parar', 'veloe', 'conectcar',
-                'mercado livre', 'meli+', 'wine', 'tag livros', 'folha', 'estadao', 'o globo',
-                'tinder', 'duolingo', 'babbel'
-            ]
+            # Puxa a lista de assinaturas permitidas do Banco de Dados
+            regras_sub = db.query(SubscriptionRule).all()
+            assinaturas_comuns = [r.keyword.lower() for r in regras_sub]
             
-            # Cria um filtro usando Expressões Regulares (Regex) para achar qualquer uma das palavras
-            padrao = '|'.join(assinaturas_comuns)
-            
-            # Filtra o DataFrame para pegar apenas compras que contenham essas palavras-chave
-            df_assinaturas = df[df['description'].str.lower().str.contains(padrao, na=False, regex=True)]
-            
-            # Agrupa os dados filtrados
-            assinaturas = df_assinaturas.groupby('description').agg(
-                meses_cobrados=('month_year', 'nunique'), 
-                valor_medio=('amount', 'mean')
-            ).reset_index()
-            
-            # Exige que tenha sido cobrado em pelo menos 2 meses diferentes para ser considerado recorrência
-            assinaturas = assinaturas[assinaturas['meses_cobrados'] >= 2].sort_values('valor_medio', ascending=False)
-            
-            if assinaturas.empty: 
-                st.info("Nenhuma assinatura conhecida foi identificada com recorrência.")
+            if not assinaturas_comuns:
+                st.warning("Sua lista de assinaturas conhecidas está vazia. Adicione termos abaixo.")
             else:
-                render_metric_card("Seu Custo Fixo de Assinaturas", f"R$ {assinaturas['valor_medio'].sum():,.2f}")
-                st.write("")
-                assinaturas.columns = ['Serviço / Assinatura', 'Meses Cobrados', 'Média de Valor (R$)']
+                padrao = '|'.join(assinaturas_comuns)
+                df_assinaturas = df[df['description'].str.lower().str.contains(padrao, na=False, regex=True)]
                 
-                # AgGrid para visualização bonita
-                AgGrid(assinaturas, fit_columns_on_grid_load=True, theme="alpine")
+                assinaturas = df_assinaturas.groupby('description').agg(
+                    meses_cobrados=('month_year', 'nunique'), 
+                    valor_medio=('amount', 'mean')
+                ).reset_index()
+                
+                assinaturas = assinaturas[assinaturas['meses_cobrados'] >= 2].sort_values('valor_medio', ascending=False)
+                
+                if assinaturas.empty: 
+                    st.info("Nenhuma assinatura cadastrada foi identificada com recorrência na sua fatura.")
+                else:
+                    render_metric_card("Seu Custo Fixo de Assinaturas", f"R$ {assinaturas['valor_medio'].sum():,.2f}")
+                    st.write("")
+                    assinaturas.columns = ['Serviço / Assinatura', 'Meses Cobrados', 'Média de Valor (R$)']
+                    AgGrid(assinaturas, fit_columns_on_grid_load=True, theme="alpine")
+
+            st.markdown("---")
+            # --- GERENCIADOR DA LISTA DE ASSINATURAS ---
+            with st.expander("⚙️ Gerenciar Lista de Assinaturas Conhecidas (Adicionar/Remover)"):
+                col_add, col_del = st.columns(2)
+                
+                with col_add:
+                    st.write("**Adicionar Nova Assinatura**")
+                    nova_sub = st.text_input("Nome/Termo do serviço (ex: strava, nintendo):").lower().strip()
+                    if st.button("Adicionar à Lista", type="primary") and nova_sub:
+                        if db.query(SubscriptionRule).filter_by(keyword=nova_sub).first():
+                            st.warning("Esta assinatura já está na lista.")
+                        else:
+                            db.add(SubscriptionRule(keyword=nova_sub))
+                            db.commit()
+                            st.success(f"'{nova_sub}' adicionado!")
+                            st.rerun()
+                            
+                with col_del:
+                    st.write("**Remover Assinatura da Lista**")
+                    df_regras_sub = pd.read_sql("SELECT id, keyword as 'Assinatura' FROM subscription_rules ORDER BY keyword", engine)
+                    st.dataframe(df_regras_sub, use_container_width=True, hide_index=True, height=150)
+                    
+                    sub_id_del = st.number_input("ID do item para excluir da lista:", min_value=0, step=1)
+                    if st.button("Excluir Assinatura") and sub_id_del > 0:
+                        db.query(SubscriptionRule).filter_by(id=sub_id_del).delete()
+                        db.commit()
+                        st.success("Item removido da lista!")
+                        st.rerun()
     db.close()
 
 # ==========================================
@@ -406,7 +439,6 @@ elif menu == "Importar Fatura":
     st.markdown("---")
     col1, col2 = st.columns([1,2])
     with col1:
-        # Lottie Animation para a seção de Mágica
         lottie_magic = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_p8qulw7z.json")
         if lottie_magic: st_lottie(lottie_magic, height=200, key="magic")
         
@@ -470,7 +502,7 @@ elif menu == "Configurações":
     db.close()
 
 # ==========================================
-# TELA 5: ASSISTENTE IA (LOTTIE INTEGRADO)
+# TELA 5: ASSISTENTE IA
 # ==========================================
 elif menu == "Assistente IA":
     st.header("🧠 Oráculo Financeiro")
@@ -478,7 +510,6 @@ elif menu == "Assistente IA":
     else:
         col1, col2 = st.columns([2, 1])
         with col2:
-            # Robô animado escutando
             lottie_robot = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_0xbu0vpt.json")
             if lottie_robot: st_lottie(lottie_robot, height=250, key="robot")
             
