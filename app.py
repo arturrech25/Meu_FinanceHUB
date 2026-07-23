@@ -124,16 +124,15 @@ elif menu == "Importar Fatura":
                     # Converte as informações
                     dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
                     
-                    # Transforma a string do valor do C6 (ex: "1.234,56" ou "12,50") em número
                     # Limpa formatações variadas de moeda (C6 exporta com ponto: 75.69)
-val_str = str(amount_raw).strip()
-if ',' in val_str and '.' in val_str:
-    # Se tiver os dois (ex: 1.234,56), remove o ponto e troca vírgula por ponto
-    val_str = val_str.replace('.', '').replace(',', '.')
-elif ',' in val_str:
-    # Se só tiver vírgula (ex: 75,69), troca por ponto
-    val_str = val_str.replace(',', '.')
-# Se só tiver ponto (ex: 75.69), o Python já entende nativamente.
+                    val_str = str(amount_raw).strip()
+                    if ',' in val_str and '.' in val_str:
+                        # Se tiver os dois (ex: 1.234,56), remove o ponto e troca vírgula por ponto
+                        val_str = val_str.replace('.', '').replace(',', '.')
+                    elif ',' in val_str:
+                        # Se só tiver vírgula (ex: 75,69), troca por ponto
+                        val_str = val_str.replace(',', '.')
+                    # Se só tiver ponto (ex: 75.69), o Python já entende nativamente.
 
 amount = float(val_str)
                     
