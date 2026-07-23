@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
 
 # Conecta ao seu banco de dados no Google Drive
-DB_PATH = 'financehub_v4.db'
+DB_PATH = 'financehub_v5.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
 from sqlalchemy import Column, Integer, String, Float, Date
 from sqlalchemy.orm import declarative_base
@@ -192,6 +192,13 @@ elif menu == "Importar Fatura":
                     
                     if pd.isna(amount_raw) or amount_raw == '': 
                         continue
+                        
+                    # 🚫 TRAVA DE PAGAMENTOS: Ignora pagamentos de fatura, IOF e estornos
+                    desc_lower = desc.lower()
+                    termos_ignorados = ["inclusão de pagamento", "pagamento efetuado", "iof", "estorno", "pagamento de fatura"]
+                    
+                    if any(termo in desc_lower for termo in termos_ignorados):
+                        continue # Pula essa linha da planilha e não salva!
                     
                     dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
                     
