@@ -83,17 +83,20 @@ if menu == "Dashboard":
         if df.empty:
             st.warning("Seu banco de dados está vazio. Vá na aba 'Importar Fatura'.")
         else:
+            # Prepara os dados
             df['date'] = pd.to_datetime(df['date'])
             df['month_year'] = df['date'].dt.to_period('M').astype(str)
+            df['day'] = df['date'].dt.day
             
+            # --- FILTROS LATERAIS ---
             st.sidebar.markdown("---")
-            st.sidebar.subheader("Filtros")
+            st.sidebar.subheader("Filtros do Dashboard")
             
             meses_disponiveis = sorted(df['month_year'].unique(), reverse=True)
-            meses_selecionados = st.sidebar.multiselect("Selecione os Meses", meses_disponiveis, default=[meses_disponiveis[0]] if meses_disponiveis else [])
+            meses_selecionados = st.sidebar.multiselect("📅 Selecione os Meses", meses_disponiveis, default=[meses_disponiveis[0]] if meses_disponiveis else [])
             
             categorias_disponiveis = sorted(df['category'].unique())
-            categorias_selecionadas = st.sidebar.multiselect("Filtrar Categorias", categorias_disponiveis, default=categorias_disponiveis)
+            categorias_selecionadas = st.sidebar.multiselect("🏷️ Filtrar Categorias", categorias_disponiveis, default=categorias_disponiveis)
             
             df_filtrado = df[(df['month_year'].isin(meses_selecionados)) & (df['category'].isin(categorias_selecionadas))]
             
@@ -108,74 +111,104 @@ if menu == "Dashboard":
                 saldo = total_entradas - total_gasto
                 maior_compra = despesas['amount'].max() if not despesas.empty else 0
                 
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}")
-                col4.metric("Maior Compra", f"R$ {maior_compra:,.2f}")
+                # --- MÉTRICAS (Dentro de um container com borda para ficar elegante) ---
+                with st.container(border=True):
+                    st.markdown("### 💰 Visão Geral do Período")
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}")
+                    col2.metric("Total Recebido", f"R$ {total_entradas:,.2f}")
+                    
+                    # Muda a cor do saldo se for negativo
+                    cor_saldo = "normal" if saldo >= 0 else "inverse"
+                    col3.metric("Saldo do Período", f"R$ {saldo:,.2f}", delta="Lucro" if saldo >=0 else "Prejuízo", delta_color=cor_saldo)
+                    col4.metric("Maior Compra", f"R$ {maior_compra:,.2f}")
                 
-                st.markdown("---")
+                st.write("") # Espaço em branco
                 
+                # --- GRÁFICOS LINHA 1 ---
                 col_grafico1, col_grafico2 = st.columns(2)
                 with col_grafico1:
-                    gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
-                    fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução de Despesas", text_auto='.2s', color_discrete_sequence=['#EF4444'])
-                    fig1.update_traces(textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
-                    st.plotly_chart(fig1, use_container_width=True)
+                    with st.container(border=True):
+                        gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
+                        fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução de Despesas por Mês", text_auto='.2s', color_discrete_sequence=['#EF4444'])
+                        fig1.update_traces(textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
+                        st.plotly_chart(fig1, use_container_width=True)
                     
                 with col_grafico2:
-                    gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
-                    fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.5, title="🍩 Despesas por Categoria (Período)")
-                    fig2.update_traces(textposition='inside', textinfo='percent')
-                    st.plotly_chart(fig2, use_container_width=True)
+                    with st.container(border=True):
+                        gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
+                        fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.4, title="🍩 Distribuição por Categoria")
+                        fig2.update_traces(textposition='inside', textinfo='percent')
+                        fig2.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+                        st.plotly_chart(fig2, use_container_width=True)
                 
-                st.markdown("---")
-                st.subheader("📋 Histórico Detalhado (Editável)")
+                # --- GRÁFICOS LINHA 2 ---
+                col_grafico3, col_grafico4 = st.columns(2)
+                with col_grafico3:
+                    with st.container(border=True):
+                        # Novo gráfico: Ritmo de gastos diários (agrega os dias selecionados)
+                        gastos_dia = despesas.groupby('date')['amount'].sum().reset_index()
+                        fig3 = px.line(gastos_dia, x='date', y='amount', title="🗓️ Ritmo de Gastos Diário", markers=True, color_discrete_sequence=['#F59E0B'])
+                        st.plotly_chart(fig3, use_container_width=True)
+                        
+                with col_grafico4:
+                    with st.container(border=True):
+                        # Novo gráfico: Top 5 Maiores Despesas
+                        top5 = despesas.nlargest(5, 'amount')[['description', 'amount']].sort_values(by='amount', ascending=True)
+                        fig4 = px.bar(top5, x='amount', y='description', orientation='h', title="🏆 Top 5 Maiores Despesas Individuais", text_auto='.2s', color_discrete_sequence=['#3B82F6'])
+                        fig4.update_traces(textfont_size=12, textposition="outside", cliponaxis=False)
+                        fig4.update_layout(yaxis_title=None, xaxis_title="Valor (R$)")
+                        st.plotly_chart(fig4, use_container_width=True)
                 
-                df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
-                df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
-                
-                edited_df = st.data_editor(
-                    df_mostrar, use_container_width=True, hide_index=True,
-                    column_config={
-                        "id": None, "date": st.column_config.TextColumn("Data", disabled=True),
-                        "description": st.column_config.TextColumn("Descrição", disabled=True),
-                        "amount": st.column_config.NumberColumn("Valor (R$)", disabled=True),
-                        "type": st.column_config.TextColumn("Tipo", disabled=True),
-                        "category": st.column_config.SelectboxColumn("Categoria", options=categorias_disponiveis + ["Nova Categoria..."])
-                    }
-                )
-                
-                col_btn1, col_btn2 = st.columns([1, 4])
-                with col_btn1:
-                    if st.button("💾 Salvar Categorias", type="primary"):
-                        db = SessionLocal()
-                        alteracoes = 0
-                        for index, row in edited_df.iterrows():
-                            old_cat = df_mostrar.loc[index, 'category']
-                            if old_cat != row['category']:
-                                db.query(Transaction).filter_by(id=row['id']).update({"category": row['category']})
-                                alteracoes += 1
-                        db.commit()
-                        db.close()
-                        if alteracoes > 0:
-                            st.success(f"{alteracoes} atualizadas!")
-                            st.rerun()
-                
-                # NOVO: Botão de Exportação para Excel
-                with col_btn2:
-                    buffer = io.BytesIO()
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        df_mostrar.drop(columns=['id']).to_excel(writer, index=False, sheet_name='Transações')
+                # --- TABELA E EXPORTAÇÃO (DENTRO DE UM EXPANDER PARA LIMPAR A TELA) ---
+                with st.expander("🛠️ Ver/Editar Histórico Detalhado e Exportar", expanded=False):
+                    st.caption("Altere a categoria diretamente na tabela e clique em Salvar.")
                     
-                    st.download_button(
-                        label="📥 Baixar Relatório em Excel",
-                        data=buffer.getvalue(),
-                        file_name=f"FinanceHub_Relatorio_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
+                    df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
+                    
+                    edited_df = st.data_editor(
+                        df_mostrar, use_container_width=True, hide_index=True,
+                        column_config={
+                            "id": None, "date": st.column_config.TextColumn("Data", disabled=True),
+                            "description": st.column_config.TextColumn("Descrição", disabled=True),
+                            "amount": st.column_config.NumberColumn("Valor (R$)", disabled=True),
+                            "type": st.column_config.TextColumn("Tipo", disabled=True),
+                            "category": st.column_config.SelectboxColumn("Categoria", options=categorias_disponiveis + ["Nova Categoria..."])
+                        }
                     )
+                    
+                    col_btn1, col_btn2 = st.columns([1, 1])
+                    with col_btn1:
+                        if st.button("💾 Salvar Categorias", type="primary", use_container_width=True):
+                            db = SessionLocal()
+                            alteracoes = 0
+                            for index, row in edited_df.iterrows():
+                                old_cat = df_mostrar.loc[index, 'category']
+                                if old_cat != row['category']:
+                                    db.query(Transaction).filter_by(id=row['id']).update({"category": row['category']})
+                                    alteracoes += 1
+                            db.commit()
+                            db.close()
+                            if alteracoes > 0:
+                                st.success(f"{alteracoes} atualizadas!")
+                                st.rerun()
+                    
+                    with col_btn2:
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                            df_mostrar.drop(columns=['id']).to_excel(writer, index=False, sheet_name='Transações')
+                        
+                        st.download_button(
+                            label="📥 Baixar Relatório em Excel",
+                            data=buffer.getvalue(),
+                            file_name=f"FinanceHub_Relatorio_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
 
     except Exception as e:
         st.error(f"Erro ao carregar dados do Dashboard: {e}")
-
 # ==========================================
 # TELA 2: METAS & CUSTOS FIXOS (NOVO)
 # ==========================================
