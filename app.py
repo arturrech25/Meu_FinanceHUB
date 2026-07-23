@@ -1,27 +1,32 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date
+from sqlalchemy.orm import declarative_base, sessionmaker
 import os
 import hashlib
 from datetime import datetime
-from sqlalchemy.orm import sessionmaker
+import textwrap
 
-# Configuração da Página Web
+# Tenta importar o pacote do Gemini (pip install google-generativeai)
+try:
+    import google.generativeai as genai
+    HAS_AI = True
+except ImportError:
+    HAS_AI = False
+
+# ==========================================
+# CONFIGURAÇÃO INICIAL E BANCO DE DADOS
+# ==========================================
 st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
 
-# Conecta ao seu banco de dados no Google Drive
-DB_PATH = 'financehub_v5.db'
+DB_PATH = 'financehub_v6.db' # Atualizado para v6 para não dar conflito com o antigo
 engine = create_engine(f'sqlite:///{DB_PATH}')
-from sqlalchemy import Column, Integer, String, Float, Date
-from sqlalchemy.orm import declarative_base
-
 Base = declarative_base()
 
-# Planta baixa da nossa tabela
+# Tabela de Transações
 class Transaction(Base):
     __tablename__ = 'transactions'
-    
     id = Column(Integer, primary_key=True, autoincrement=True)
     date = Column(Date, nullable=False)
     description = Column(String, nullable=False)
@@ -30,19 +35,40 @@ class Transaction(Base):
     category = Column(String, default="Outros")
     hash_id = Column(String, unique=True, nullable=False)
 
-# Essa é a linha mágica que constrói a tabela se ela não existir
-Base.metadata.create_all(engine)
+# Tabela de Regras de Categorização (Melhoria 3)
+class CategoryRule(Base):
+    __tablename__ = 'category_rules'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    keyword = Column(String, unique=True, nullable=False)
+    category = Column(String, nullable=False)
 
-# Título do App
+Base.metadata.create_all(engine)
+SessionLocal = sessionmaker(bind=engine)
+
+# Semeando regras iniciais se o banco estiver vazio
+def seed_rules():
+    db = SessionLocal()
+    if db.query(CategoryRule).count() == 0:
+        regras_iniciais = {
+            'ifood': 'Alimentação', 'mcdonalds': 'Alimentação', 'padaria': 'Alimentação',
+            'uber': 'Transporte', '99app': 'Transporte', 'posto': 'Combustível',
+            'farmacia': 'Saúde', 'netflix': 'Assinaturas', 'spotify': 'Assinaturas',
+            'amazon': 'Compras', 'mercado': 'Mercado'
+        }
+        for kw, cat in regras_iniciais.items():
+            db.add(CategoryRule(keyword=kw, category=cat))
+        db.commit()
+    db.close()
+seed_rules()
+
+# ==========================================
+# MENU E NAVEGAÇÃO
+# ==========================================
 st.title("💸 FinanceHub - Gestão Pessoal")
 st.markdown("---")
 
-# Cria um menu lateral
-menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Assistente IA"])
+menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Configurações", "Assistente IA"])
 
-# ==========================================
-# TELA 1: DASHBOARD
-# ==========================================
 # ==========================================
 # TELA 1: DASHBOARD
 # ==========================================
@@ -54,88 +80,112 @@ if menu == "Dashboard":
         if df.empty:
             st.warning("Seu banco de dados está vazio. Vá na aba 'Importar Fatura'.")
         else:
-            # Prepara as datas
             df['date'] = pd.to_datetime(df['date'])
             df['month_year'] = df['date'].dt.to_period('M').astype(str)
             
-            # --- FILTROS LATERAIS ---
+            # Filtros Laterais
             st.sidebar.markdown("---")
             st.sidebar.subheader("Filtros")
-            
             meses_disponiveis = sorted(df['month_year'].unique(), reverse=True)
-            meses_selecionados = st.sidebar.multiselect("Selecione os Meses", meses_disponiveis, default=meses_disponiveis)
+            mes_selecionado = st.sidebar.selectbox("Selecione o Mês Base", meses_disponiveis)
             
             categorias_disponiveis = sorted(df['category'].unique())
-            categorias_selecionadas = st.sidebar.multiselect("Selecione as Categorias", categorias_disponiveis, default=categorias_disponiveis)
+            categorias_selecionadas = st.sidebar.multiselect("Filtrar Categorias", categorias_disponiveis, default=categorias_disponiveis)
             
-            # Aplica os filtros
-            df_filtrado = df[(df['month_year'].isin(meses_selecionados)) & (df['category'].isin(categorias_selecionadas))]
+            df_filtrado = df[(df['month_year'] == mes_selecionado) & (df['category'].isin(categorias_selecionadas))]
             
             if df_filtrado.empty:
                 st.info("Nenhum dado encontrado para os filtros selecionados.")
             else:
-                # --- MÉTRICAS PRINCIPAIS (KPIs) ---
+                # Melhoria 2: Cálculo de Deltas (Mês Atual vs Mês Anterior)
+                mes_atual_idx = meses_disponiveis.index(mes_selecionado)
+                df_mes_anterior = pd.DataFrame()
+                if mes_atual_idx + 1 < len(meses_disponiveis):
+                    mes_anterior = meses_disponiveis[mes_atual_idx + 1]
+                    df_mes_anterior = df[df['month_year'] == mes_anterior]
+
                 despesas = df_filtrado[df_filtrado['type'] == 'EXPENSE']
                 entradas = df_filtrado[df_filtrado['type'] == 'INCOME']
                 
                 total_gasto = despesas['amount'].sum()
                 total_entradas = entradas['amount'].sum()
                 saldo = total_entradas - total_gasto
-                
                 maior_compra = despesas['amount'].max() if not despesas.empty else 0
-                nome_maior_compra = despesas.loc[despesas['amount'].idxmax()]['description'] if not despesas.empty else "-"
                 
+                # Deltas
+                gasto_anterior = df_mes_anterior[df_mes_anterior['type'] == 'EXPENSE']['amount'].sum() if not df_mes_anterior.empty else 0
+                delta_gasto = ((total_gasto - gasto_anterior) / gasto_anterior * 100) if gasto_anterior > 0 else 0
+                delta_str = f"{delta_gasto:.1f}% vs mês anterior" if gasto_anterior > 0 else "Sem dados passados"
+
                 col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}")
-                col2.metric("Maior Compra", f"R$ {maior_compra:,.2f}", help=f"Estabelecimento: {nome_maior_compra}")
+                col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}", delta=delta_str, delta_color="inverse")
+                col2.metric("Total Recebido", f"R$ {total_entradas:,.2f}")
+                col3.metric("Saldo do Mês", f"R$ {saldo:,.2f}")
+                col4.metric("Maior Compra", f"R$ {maior_compra:,.2f}")
                 
                 st.markdown("---")
                 
-                # --- ÁREA DOS GRÁFICOS ---
-                # Linha 1: Gráficos de Mês e Categoria
+                # Gráficos
                 col_grafico1, col_grafico2 = st.columns(2)
                 
                 with col_grafico1:
-                    gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
-                    fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Despesas por Mês", text_auto='.2s', color_discrete_sequence=['#EF4444'])
-                    fig1.update_traces(textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
+                    # Melhoria 2: Gráfico de Entradas vs Saídas
+                    resumo_fluxo = df[df['category'].isin(categorias_selecionadas)].groupby(['month_year', 'type'])['amount'].sum().reset_index()
+                    # Padroniza nomes para o gráfico
+                    resumo_fluxo['type'] = resumo_fluxo['type'].map({'EXPENSE': 'Despesa', 'INCOME': 'Entrada'})
+                    fig1 = px.bar(resumo_fluxo, x='month_year', y='amount', color='type', barmode='group',
+                                  title="📈 Fluxo de Caixa (Entradas vs Saídas)", color_discrete_map={'Despesa': '#EF4444', 'Entrada': '#10B981'})
                     st.plotly_chart(fig1, use_container_width=True)
                     
                 with col_grafico2:
                     gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
-                    fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.5, title="🍩 Divisão por Categoria")
+                    fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.5, title="🍩 Despesas por Categoria (Mês Selecionado)")
                     fig2.update_traces(textposition='inside', textinfo='percent')
                     st.plotly_chart(fig2, use_container_width=True)
                 
-                # Linha 2: Top Estabelecimentos e Evolução Diária
-                col_grafico3, col_grafico4 = st.columns(2)
-                
-                with col_grafico3:
-                    top_estabelecimentos = despesas.groupby('description')['amount'].sum().nlargest(10).reset_index()
-                    fig3 = px.bar(top_estabelecimentos, x='amount', y='description', orientation='h', 
-                                  title="🏆 Top 10 Estabelecimentos", color_discrete_sequence=['#3B82F6'])
-                    fig3.update_layout(yaxis={'categoryorder':'total ascending'})
-                    st.plotly_chart(fig3, use_container_width=True)
-                    
-                with col_grafico4:
-                    gastos_diarios = despesas.groupby('date')['amount'].sum().reset_index()
-                    fig4 = px.line(gastos_diarios, x='date', y='amount', title="📈 Evolução Diária de Gastos", markers=True, color_discrete_sequence=['#10B981'])
-                    st.plotly_chart(fig4, use_container_width=True)
-                
-                # --- TABELA INTERATIVA ---
+                # Melhoria 2: Tabela Editável
                 st.markdown("---")
-                st.subheader("📋 Histórico Detalhado")
+                st.subheader("📋 Histórico Detalhado (Editável)")
+                st.caption("Altere a categoria diretamente na tabela e clique em Salvar.")
                 
-                # Prepara a tabela para ficar mais bonita
-                df_mostrar = df_filtrado[['date', 'description', 'category', 'amount', 'type']].copy()
+                # Prepara dados para o editor
+                df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
                 df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
-                df_mostrar.columns = ['Data', 'Descrição', 'Categoria', 'Valor (R$)', 'Tipo']
                 
-                st.dataframe(df_mostrar.sort_values('Data', ascending=False), use_container_width=True, hide_index=True)
-            
+                # Usamos o data_editor nativo do Streamlit
+                edited_df = st.data_editor(
+                    df_mostrar, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config={
+                        "id": None, # Esconde o ID
+                        "date": st.column_config.TextColumn("Data", disabled=True),
+                        "description": st.column_config.TextColumn("Descrição", disabled=True),
+                        "amount": st.column_config.NumberColumn("Valor (R$)", disabled=True),
+                        "type": st.column_config.TextColumn("Tipo", disabled=True),
+                        "category": st.column_config.SelectboxColumn("Categoria", options=categorias_disponiveis + ["Nova Categoria..."])
+                    }
+                )
+                
+                if st.button("💾 Salvar Alterações de Categoria", type="primary"):
+                    db = SessionLocal()
+                    alteracoes = 0
+                    for index, row in edited_df.iterrows():
+                        old_cat = df_mostrar.loc[index, 'category']
+                        new_cat = row['category']
+                        if old_cat != new_cat:
+                            db.query(Transaction).filter_by(id=row['id']).update({"category": new_cat})
+                            alteracoes += 1
+                    db.commit()
+                    db.close()
+                    if alteracoes > 0:
+                        st.success(f"{alteracoes} transações atualizadas! Recarregue a página para ver os gráficos atualizados.")
+                        st.rerun()
+                    else:
+                        st.info("Nenhuma alteração detectada.")
+                        
     except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
-        st.error(f"Erro ao carregar dados: {e}")
+        st.error(f"Erro ao carregar dados do Dashboard: {e}")
 
 # ==========================================
 # TELA 2: IMPORTAÇÃO
@@ -150,79 +200,58 @@ elif menu == "Importar Fatura":
                 df_upload = pd.read_csv(arquivo, sep=';', encoding='utf-8')
                 df_upload.columns = [c.strip().lower() for c in df_upload.columns]
                 
-                SessionLocal = sessionmaker(bind=engine)
                 db = SessionLocal()
+                
+                # Busca as regras dinâmicas do banco
+                regras_db = db.query(CategoryRule).all()
+                regras = {r.keyword.lower(): r.category for r in regras_db}
                 
                 importados = 0
                 ignorados = 0
-                
-                # --- O CÉREBRO DA CATEGORIZAÇÃO (Você pode adicionar mais palavras aqui) ---
-                regras = {
-                    'ifood': 'Alimentação',
-                    'mcdonalds': 'Alimentação',
-                    'restaurante': 'Alimentação',
-                    'padaria': 'Alimentação',
-                    'uber': 'Transporte',
-                    '99app': 'Transporte',
-                    'posto': 'Combustível',
-                    'farmacia': 'Saúde',
-                    'netflix': 'Assinaturas',
-                    'spotify': 'Assinaturas',
-                    'amazon': 'Compras',
-                    'stanley': 'Compras',
-                    'mercado': 'Mercado',
-                    'supermercado': 'Mercado',
-                    'pgto': 'Pagamento da Fatura'
-                }
-                
                 progress_bar = st.progress(0)
                 total_linhas = len(df_upload)
+                
+                # Melhoria 1: Track de ocorrências para evitar colisão de Hash em compras idênticas no mesmo dia
+                ocorrencias = {} 
                 
                 for index, row in df_upload.iterrows():
                     progress_bar.progress(min((index + 1) / total_linhas, 1.0))
                     
                     date_val = row.get('data de compra')
-                    desc = str(row.get('descrição', 'Desconhecido'))
+                    desc = str(row.get('descrição', 'Desconhecido')).strip()
                     amount_raw = row.get('valor (em r$)')
-                    
-                    # 💡 AQUI: Pegamos a categoria oficial do banco C6!
                     categoria_c6 = str(row.get('categoria', '')).strip()
                     
                     if pd.isna(amount_raw) or amount_raw == '': 
                         continue
                         
-                    # 🚫 TRAVA DE PAGAMENTOS: Ignora pagamentos de fatura, IOF e estornos
                     desc_lower = desc.lower()
                     termos_ignorados = ["inclusão de pagamento", "pagamento efetuado", "iof", "estorno", "pagamento de fatura"]
-                    
                     if any(termo in desc_lower for termo in termos_ignorados):
-                        continue # Pula essa linha da planilha e não salva!
+                        continue
                     
                     dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
                     
-                    val_str = str(amount_raw).strip()
-                    if ',' in val_str and '.' in val_str:
-                        val_str = val_str.replace('.', '').replace(',', '.')
-                    elif ',' in val_str:
-                        val_str = val_str.replace(',', '.')
-                    
+                    val_str = str(amount_raw).strip().replace('.', '').replace(',', '.') if ',' in str(amount_raw) and '.' in str(amount_raw) else str(amount_raw).strip().replace(',', '.')
                     amount = float(val_str)
                     t_type = "EXPENSE" if amount > 0 else "INCOME"
                     
-                    # --- SISTEMA DE CATEGORIZAÇÃO INTELIGENTE ---
-                    # 1. Tenta usar a categoria do C6 Bank
-                    if categoria_c6 and categoria_c6.lower() != 'nan' and categoria_c6 != '':
-                        categoria_definida = categoria_c6.title() # Deixa a primeira letra maiúscula
+                    # Categorização inteligente (C6 -> Banco de Regras -> Outros)
+                    categoria_definida = "Outros"
+                    if categoria_c6 and categoria_c6.lower() != 'nan':
+                        categoria_definida = categoria_c6.title()
                     else:
-                        # 2. Se o C6 não souber, usa nossas regras
-                        categoria_definida = "Outros"
-                        desc_lower = desc.lower()
                         for palavra_chave, categoria_nome in regras.items():
                             if palavra_chave in desc_lower:
                                 categoria_definida = categoria_nome
                                 break
                     
-                    raw_str = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}".encode('utf-8')
+                    # Melhoria 1: Resolução da colisão do Hash
+                    chave_base = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}"
+                    ocorrencias[chave_base] = ocorrencias.get(chave_base, 0) + 1
+                    
+                    # Adiciona a contagem no hash. Ex: Compra 1 ganha final _1, Compra 2 ganha final _2
+                    raw_str = f"{chave_base}_{ocorrencias[chave_base]}".encode('utf-8')
                     tx_hash = hashlib.sha256(raw_str).hexdigest()
                     
                     if db.query(Transaction).filter_by(hash_id=tx_hash).first():
@@ -230,12 +259,8 @@ elif menu == "Importar Fatura":
                         continue
                     
                     nova_compra = Transaction(
-                        date=dt_obj, 
-                        description=desc, 
-                        amount=abs(amount), 
-                        type=t_type, 
-                        category=categoria_definida, 
-                        hash_id=tx_hash
+                        date=dt_obj, description=desc, amount=abs(amount), 
+                        type=t_type, category=categoria_definida, hash_id=tx_hash
                     )
                     db.add(nova_compra)
                     importados += 1
@@ -243,27 +268,103 @@ elif menu == "Importar Fatura":
                 db.commit()
                 db.close()
                 
-                st.success(f"✅ Importação finalizada! {importados} compras categorizadas e salvas. {ignorados} ignoradas (já existiam).")
+                st.success(f"✅ Importação finalizada! {importados} compras salvas. {ignorados} ignoradas (já existiam).")
                 st.balloons()
                 
             except Exception as e:
                 st.error(f"❌ Erro ao ler a planilha: {e}")
-                st.error(f"❌ Erro ao ler a planilha: {e}")
 
 # ==========================================
-# TELA 3: CHATBOT (Opcional - Recoloquei aqui caso tenha apagado sem querer)
+# TELA 3: CONFIGURAÇÕES (REGRAS DINÂMICAS)
+# ==========================================
+elif menu == "Configurações":
+    st.header("⚙️ Configurações de Categorização")
+    st.write("Adicione palavras-chave para que o sistema categorize suas compras automaticamente nas próximas importações.")
+    
+    db = SessionLocal()
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.subheader("Adicionar Nova Regra")
+        nova_palavra = st.text_input("Palavra-chave (ex: uber, ifood, farmacia)").lower().strip()
+        nova_categoria = st.text_input("Categoria (ex: Transporte, Alimentação)").title().strip()
+        
+        if st.button("Salvar Regra"):
+            if nova_palavra and nova_categoria:
+                existe = db.query(CategoryRule).filter_by(keyword=nova_palavra).first()
+                if existe:
+                    st.warning("Esta palavra-chave já existe nas regras.")
+                else:
+                    db.add(CategoryRule(keyword=nova_palavra, category=nova_categoria))
+                    db.commit()
+                    st.success(f"Regra '{nova_palavra}' -> '{nova_categoria}' salva!")
+                    st.rerun()
+            else:
+                st.error("Preencha ambos os campos.")
+                
+    with col2:
+        st.subheader("Regras Atuais")
+        regras = pd.read_sql("SELECT id, keyword as 'Palavra Chave', category as 'Categoria' FROM category_rules", engine)
+        if not regras.empty:
+            st.dataframe(regras, hide_index=True, use_container_width=True)
+            # Função de deletar regra
+            del_id = st.number_input("ID da regra para excluir", min_value=0, step=1)
+            if st.button("Excluir Regra") and del_id > 0:
+                db.query(CategoryRule).filter_by(id=del_id).delete()
+                db.commit()
+                st.rerun()
+        else:
+            st.info("Nenhuma regra configurada.")
+            
+    db.close()
+
+# ==========================================
+# TELA 4: ASSISTENTE IA (GEMINI)
 # ==========================================
 elif menu == "Assistente IA":
-    st.header("💬 Converse com seus dados")
-    pergunta = st.text_input("Qual a sua dúvida financeira?")
+    st.header("🤖 Assistente Financeiro IA (Google Gemini)")
     
-    if st.button("Perguntar") and pergunta:
-        try:
-            df = pd.read_sql("SELECT * FROM transactions", engine)
-            if "total" in pergunta.lower() and "gasto" in pergunta.lower():
-                total = df[df['type'] == 'EXPENSE']['amount'].sum()
-                st.success(f"O seu gasto total acumulado é de R$ {total:,.2f}.")
+    if not HAS_AI:
+        st.error("A biblioteca do Google Gemini não está instalada. Para usar esta função, pare a aplicação e digite no terminal: `pip install google-generativeai`")
+    else:
+        st.info("Obtenha sua API Key grátis em: https://aistudio.google.com/app/apikey")
+        api_key = st.text_input("Insira sua API Key do Google Gemini:", type="password")
+        
+        if api_key:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            
+            df = pd.read_sql("SELECT date, description, amount, type, category FROM transactions", engine)
+            
+            if df.empty:
+                st.warning("Seu banco de dados está vazio. Importe transações primeiro.")
             else:
-                st.info("Desculpe, ainda estou aprendendo. Tente perguntar: 'Qual foi meu total gasto?'")
-        except:
-            st.error("Erro ao ler banco de dados.")
+                st.success("IA conectada e pronta para ler seus dados!")
+                
+                # Criando um resumo dos dados para não estourar o limite de tokens
+                resumo_por_categoria = df.groupby(['category', 'type'])['amount'].sum().to_dict()
+                compras_recentes = df.sort_values(by='date', ascending=False).head(20).to_string(index=False)
+                
+                contexto_dados = textwrap.dedent(f"""
+                Você é um consultor financeiro pessoal amigável e direto. 
+                Aqui está um resumo dos gastos do usuário:
+                Totais por categoria/tipo: {resumo_por_categoria}
+                
+                Últimas 20 transações:
+                {compras_recentes}
+                """)
+                
+                pergunta = st.chat_input("Ex: Quais categorias estão drenando meu dinheiro?")
+                
+                if pergunta:
+                    with st.chat_message("user"):
+                        st.write(pergunta)
+                        
+                    with st.chat_message("assistant"):
+                        with st.spinner("Analisando suas finanças..."):
+                            prompt = f"{contexto_dados}\n\nO usuário pergunta: {pergunta}"
+                            try:
+                                resposta = model.generate_content(prompt)
+                                st.write(resposta.text)
+                            except Exception as e:
+                                st.error(f"Erro na IA: {e}")
