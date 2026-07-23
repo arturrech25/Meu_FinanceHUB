@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
 
 # Conecta ao seu banco de dados no Google Drive
-DB_PATH = 'financehub_v2.db'
+DB_PATH = 'financehub_v3.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
 from sqlalchemy import Column, Integer, String, Float, Date
 from sqlalchemy.orm import declarative_base
@@ -87,9 +87,6 @@ if menu == "Dashboard":
 # ==========================================
 # TELA 2: IMPORTAÇÃO
 # ==========================================
-# ==========================================
-# TELA 2: IMPORTAÇÃO
-# ==========================================
 elif menu == "Importar Fatura":
     st.header("📥 Importar nova Fatura (C6 Bank)")
     arquivo = st.file_uploader("Arraste seu arquivo .csv do C6 Bank aqui", type=["csv"])
@@ -97,37 +94,49 @@ elif menu == "Importar Fatura":
     if arquivo is not None:
         if st.button("Processar Fatura"):
             try:
-                # 1. Lê a planilha do jeito que o C6 manda (separado por ;)
                 df_upload = pd.read_csv(arquivo, sep=';', encoding='utf-8')
                 df_upload.columns = [c.strip().lower() for c in df_upload.columns]
                 
-                # 2. Conecta no banco de dados para salvar
                 SessionLocal = sessionmaker(bind=engine)
                 db = SessionLocal()
                 
                 importados = 0
                 ignorados = 0
                 
-                # Barra de progresso visual no site
+                # --- O CÉREBRO DA CATEGORIZAÇÃO (Você pode adicionar mais palavras aqui) ---
+                regras = {
+                    'ifood': 'Alimentação',
+                    'mcdonalds': 'Alimentação',
+                    'restaurante': 'Alimentação',
+                    'padaria': 'Alimentação',
+                    'uber': 'Transporte',
+                    '99app': 'Transporte',
+                    'posto': 'Combustível',
+                    'farmacia': 'Saúde',
+                    'netflix': 'Assinaturas',
+                    'spotify': 'Assinaturas',
+                    'amazon': 'Compras',
+                    'stanley': 'Compras',
+                    'mercado': 'Mercado',
+                    'supermercado': 'Mercado',
+                    'pgto': 'Pagamento da Fatura'
+                }
+                
                 progress_bar = st.progress(0)
                 total_linhas = len(df_upload)
                 
                 for index, row in df_upload.iterrows():
-                    # Atualiza barrinha de progresso
                     progress_bar.progress(min((index + 1) / total_linhas, 1.0))
                     
                     date_val = row.get('data de compra')
                     desc = str(row.get('descrição', 'Desconhecido'))
                     amount_raw = row.get('valor (em r$)')
                     
-                    # Se não tiver valor, pula a linha
                     if pd.isna(amount_raw) or amount_raw == '': 
                         continue
                     
-                    # Converte data
                     dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
                     
-                    # Converte moeda com segurança (nova regra de conversão)
                     val_str = str(amount_raw).strip()
                     if ',' in val_str and '.' in val_str:
                         val_str = val_str.replace('.', '').replace(',', '.')
@@ -135,37 +144,42 @@ elif menu == "Importar Fatura":
                         val_str = val_str.replace(',', '.')
                     
                     amount = float(val_str)
-                    
                     t_type = "EXPENSE" if amount > 0 else "INCOME"
                     
-                    # Cria o código único (hash)
+                    # --- APLICA AS REGRAS NAS COMPRAS ---
+                    categoria_definida = "Outros"
+                    desc_lower = desc.lower()
+                    for palavra_chave, categoria_nome in regras.items():
+                        if palavra_chave in desc_lower:
+                            categoria_definida = categoria_nome
+                            break
+                    
                     raw_str = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}".encode('utf-8')
                     tx_hash = hashlib.sha256(raw_str).hexdigest()
                     
-                    # Verifica no banco se já existe
                     if db.query(Transaction).filter_by(hash_id=tx_hash).first():
                         ignorados += 1
                         continue
                     
-                    # Salva
                     nova_compra = Transaction(
                         date=dt_obj, 
                         description=desc, 
                         amount=abs(amount), 
                         type=t_type, 
+                        category=categoria_definida, # <--- AQUI A MÁGICA ACONTECE
                         hash_id=tx_hash
                     )
                     db.add(nova_compra)
                     importados += 1
                 
-                # Salva de vez no banco
                 db.commit()
                 db.close()
                 
-                st.success(f"✅ Importação finalizada! {importados} compras novas adicionadas. {ignorados} ignoradas (já existiam).")
+                st.success(f"✅ Importação finalizada! {importados} compras categorizadas e salvas. {ignorados} ignoradas (já existiam).")
                 st.balloons()
                 
             except Exception as e:
+                st.error(f"❌ Erro ao ler a planilha: {e}")
                 st.error(f"❌ Erro ao ler a planilha: {e}")
 
 # ==========================================
