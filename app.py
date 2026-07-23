@@ -79,8 +79,7 @@ if menu == "Dashboard":
                 entradas = df_filtrado[df_filtrado['type'] == 'INCOME']
                 
                 total_gasto = despesas['amount'].sum()
-                total_entradas = entradas['amount'].sum()
-                saldo = total_entradas - total_gasto
+                
                 
                 maior_compra = despesas['amount'].max() if not despesas.empty else 0
                 nome_maior_compra = despesas.loc[despesas['amount'].idxmax()]['description'] if not despesas.empty else "-"
