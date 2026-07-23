@@ -72,23 +72,35 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Configu
 # ==========================================
 # TELA 1: DASHBOARD
 # ==========================================
-# --- FILTROS LATERAIS ---
+if menu == "Dashboard":
+    st.header("📊 Seu Dashboard Financeiro")
+    
+    try:
+        df = pd.read_sql("SELECT * FROM transactions", engine)
+        if df.empty:
+            st.warning("Seu banco de dados está vazio. Vá na aba 'Importar Fatura'.")
+        else:
+            df['date'] = pd.to_datetime(df['date'])
+            df['month_year'] = df['date'].dt.to_period('M').astype(str)
+            
+            # --- FILTROS LATERAIS ---
             st.sidebar.markdown("---")
             st.sidebar.subheader("Filtros")
             
             meses_disponiveis = sorted(df['month_year'].unique(), reverse=True)
-            
-            # MUDANÇA: Troquei selectbox por multiselect
             meses_selecionados = st.sidebar.multiselect(
                 "Selecione os Meses", 
                 meses_disponiveis, 
-                default=[meses_disponiveis[0]] # Seleciona o mês mais recente por padrão
+                default=[meses_disponiveis[0]] if meses_disponiveis else []
             )
             
             categorias_disponiveis = sorted(df['category'].unique())
-            categorias_selecionadas = st.sidebar.multiselect("Filtrar Categorias", categorias_disponiveis, default=categorias_disponiveis)
+            categorias_selecionadas = st.sidebar.multiselect(
+                "Filtrar Categorias", 
+                categorias_disponiveis, 
+                default=categorias_disponiveis
+            )
             
-            # MUDANÇA: Agora o filtro usa .isin() para suportar vários meses
             df_filtrado = df[(df['month_year'].isin(meses_selecionados)) & (df['category'].isin(categorias_selecionadas))]
             
             if df_filtrado.empty:
@@ -109,11 +121,10 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Configu
                 
                 st.markdown("---")
                 
-                # Gráficos
+                # --- GRÁFICOS ---
                 col_grafico1, col_grafico2 = st.columns(2)
                 
                 with col_grafico1:
-                    # Melhoria 2: Gráfico de Entradas vs Saídas
                     resumo_fluxo = df[df['category'].isin(categorias_selecionadas)].groupby(['month_year', 'type'])['amount'].sum().reset_index()
                     # Padroniza nomes para o gráfico
                     resumo_fluxo['type'] = resumo_fluxo['type'].map({'EXPENSE': 'Despesa', 'INCOME': 'Entrada'})
@@ -123,11 +134,11 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Configu
                     
                 with col_grafico2:
                     gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
-                    fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.5, title="🍩 Despesas por Categoria (Mês Selecionado)")
+                    fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.5, title="🍩 Despesas por Categoria (Período Selecionado)")
                     fig2.update_traces(textposition='inside', textinfo='percent')
                     st.plotly_chart(fig2, use_container_width=True)
                 
-                # Melhoria 2: Tabela Editável
+                # --- TABELA EDITÁVEL ---
                 st.markdown("---")
                 st.subheader("📋 Histórico Detalhado (Editável)")
                 st.caption("Altere a categoria diretamente na tabela e clique em Salvar.")
@@ -136,7 +147,6 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Configu
                 df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
                 df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
                 
-                # Usamos o data_editor nativo do Streamlit
                 edited_df = st.data_editor(
                     df_mostrar, 
                     use_container_width=True, 
@@ -170,7 +180,6 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Configu
                         
     except Exception as e:
         st.error(f"Erro ao carregar dados do Dashboard: {e}")
-
 # ==========================================
 # TELA 2: IMPORTAÇÃO
 # ==========================================
