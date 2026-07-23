@@ -15,9 +15,27 @@ except ImportError:
     HAS_AI = False
 
 # ==========================================
-# CONFIGURAÇÃO INICIAL E BANCO DE DADOS
+# CONFIGURAÇÃO INICIAL, CSS E BANCO DE DADOS
 # ==========================================
 st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
+
+# CSS Customizado (A "Mágica" do visual Dark UI)
+st.markdown("""
+<style>
+    /* Estiliza os blocos de métricas */
+    [data-testid="stMetric"] {
+        background-color: #1E2129;
+        border-radius: 15px;
+        padding: 20px;
+        border: 1px solid #2A2D35;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    
+    /* Esconde o menu superior padrão do Streamlit */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 
 DB_PATH = 'financehub_v7.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
@@ -39,7 +57,6 @@ class CategoryRule(Base):
     keyword = Column(String, unique=True, nullable=False)
     category = Column(String, nullable=False)
 
-# Nova Tabela: Metas de Gastos
 class Budget(Base):
     __tablename__ = 'budgets'
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -67,7 +84,7 @@ seed_rules()
 # ==========================================
 # MENU E NAVEGAÇÃO
 # ==========================================
-st.title("💸 FinanceHub - Gestão Pessoal")
+st.title("💸 FinanceHub - Wallet")
 st.markdown("---")
 
 menu = st.sidebar.radio("Navegação", ["Dashboard", "Metas & Custos Fixos", "Importar Fatura", "Configurações", "Assistente IA"])
@@ -76,22 +93,18 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Metas & Custos Fixos", "Im
 # TELA 1: DASHBOARD
 # ==========================================
 if menu == "Dashboard":
-    st.header("📊 Seu Dashboard Financeiro")
     
     try:
         df = pd.read_sql("SELECT * FROM transactions", engine)
         if df.empty:
             st.warning("Seu banco de dados está vazio. Vá na aba 'Importar Fatura'.")
         else:
-            # Prepara os dados
             df['date'] = pd.to_datetime(df['date'])
             df['month_year'] = df['date'].dt.to_period('M').astype(str)
             df['day'] = df['date'].dt.day
             
-            # --- FILTROS LATERAIS ---
             st.sidebar.markdown("---")
             st.sidebar.subheader("Filtros do Dashboard")
-            
             meses_disponiveis = sorted(df['month_year'].unique(), reverse=True)
             meses_selecionados = st.sidebar.multiselect("📅 Selecione os Meses", meses_disponiveis, default=[meses_disponiveis[0]] if meses_disponiveis else [])
             
@@ -104,46 +117,39 @@ if menu == "Dashboard":
                 st.info("Nenhum dado encontrado para os filtros selecionados.")
             else:
                 despesas = df_filtrado[df_filtrado['type'] == 'EXPENSE']
-                entradas = df_filtrado[df_filtrado['type'] == 'INCOME']
-                
                 total_gasto = despesas['amount'].sum()
-                total_entradas = entradas['amount'].sum()
-                saldo = total_entradas - total_gasto
-                maior_compra = despesas['amount'].max() if not despesas.empty else 0
                 
-                # --- MÉTRICAS (Dentro de um container com borda para ficar elegante) ---
-                with st.container(border=True):
-                    st.markdown("### 💰 Visão Geral do Período")
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}")
-                    col2.metric("Total Recebido", f"R$ {total_entradas:,.2f}")
-                    
-                    # Muda a cor do saldo se for negativo
-                    cor_saldo = "normal" if saldo >= 0 else "inverse"
-                    col3.metric("Saldo do Período", f"R$ {saldo:,.2f}", delta="Lucro" if saldo >=0 else "Prejuízo", delta_color=cor_saldo)
-                    col4.metric("Maior Compra", f"R$ {maior_compra:,.2f}")
+                # --- MÉTRICA ÚNICA (Destaque principal) ---
+                col_metric, _ = st.columns([1, 3]) # Deixa a métrica mais contida
+                with col_metric:
+                    st.metric("Balance (Total Gasto)", f"R$ {total_gasto:,.2f}")
                 
-                st.write("") # Espaço em branco
+                st.write("") 
                 
                 # --- GRÁFICOS LINHA 1 ---
                 col_grafico1, col_grafico2 = st.columns(2)
                 with col_grafico1:
                     with st.container(border=True):
                         gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
-                        fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução de Despesas por Mês", text_auto='.2s', color_discrete_sequence=['#EF4444'])
-                        fig1.update_traces(textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
+                        fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução de Despesas por Mês", text_auto='.2s')
+                        
+                        # Estilo Neon/Dark
+                        fig1.update_traces(marker_color='#FF8A00', textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
+                        fig1.update_layout(
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(showgrid=False, zeroline=False),
+                            yaxis=dict(showgrid=False, zeroline=False, visible=False)
+                        )
                         st.plotly_chart(fig1, use_container_width=True)
                     
                 with col_grafico2:
                     with st.container(border=True):
                         gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
-                        fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.4, title="🍩 Distribuição por Categoria")
-                        fig2.update_traces(textposition='inside', textinfo='percent')
-                        
-                        # CORREÇÃO: Altura expandida e margens corrigidas para legendas grandes
+                        fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.6, title="🍩 Distribuição por Categoria")
+                        fig2.update_traces(textposition='inside', textinfo='percent', marker=dict(line=dict(color='#0E1117', width=2)))
                         fig2.update_layout(
-                            height=500, 
-                            margin=dict(t=50, b=0, l=20, r=20),
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            height=400, margin=dict(t=50, b=0, l=20, r=20),
                             legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
                         )
                         st.plotly_chart(fig2, use_container_width=True)
@@ -152,24 +158,31 @@ if menu == "Dashboard":
                 col_grafico3, col_grafico4 = st.columns(2)
                 with col_grafico3:
                     with st.container(border=True):
-                        # Novo gráfico: Ritmo de gastos diários (agrega os dias selecionados)
                         gastos_dia = despesas.groupby('date')['amount'].sum().reset_index()
-                        fig3 = px.line(gastos_dia, x='date', y='amount', title="🗓️ Ritmo de Gastos Diário", markers=True, color_discrete_sequence=['#F59E0B'])
+                        fig3 = px.line(gastos_dia, x='date', y='amount', title="🗓️ Ritmo de Gastos Diário", markers=True)
+                        fig3.update_traces(line_color='#FF8A00', fill='tozeroy', fillcolor='rgba(255, 138, 0, 0.1)', marker=dict(size=6, color='#FFFFFF'))
+                        fig3.update_layout(
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(showgrid=False, zeroline=False, visible=False),
+                            yaxis=dict(showgrid=False, zeroline=False, visible=False),
+                            margin=dict(l=0, r=0, t=50, b=0)
+                        )
                         st.plotly_chart(fig3, use_container_width=True)
                         
                 with col_grafico4:
                     with st.container(border=True):
-                        # Novo gráfico: Top 5 Maiores Despesas
                         top5 = despesas.nlargest(5, 'amount')[['description', 'amount']].sort_values(by='amount', ascending=True)
-                        fig4 = px.bar(top5, x='amount', y='description', orientation='h', title="🏆 Top 5 Maiores Despesas Individuais", text_auto='.2s', color_discrete_sequence=['#3B82F6'])
-                        fig4.update_traces(textfont_size=12, textposition="outside", cliponaxis=False)
-                        fig4.update_layout(yaxis_title=None, xaxis_title="Valor (R$)")
+                        fig4 = px.bar(top5, x='amount', y='description', orientation='h', title="🏆 Top 5 Maiores Despesas Individuais", text_auto='.2s')
+                        fig4.update_traces(marker_color='#FF8A00', textfont_size=12, textposition="outside", cliponaxis=False)
+                        fig4.update_layout(
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            yaxis_title=None, xaxis_title=None,
+                            xaxis=dict(showgrid=False, zeroline=False, visible=False)
+                        )
                         st.plotly_chart(fig4, use_container_width=True)
                 
-                # --- TABELA E EXPORTAÇÃO (DENTRO DE UM EXPANDER PARA LIMPAR A TELA) ---
+                # --- TABELA E EXPORTAÇÃO ---
                 with st.expander("🛠️ Ver/Editar Histórico Detalhado e Exportar", expanded=False):
-                    st.caption("Altere a categoria diretamente na tabela e clique em Salvar.")
-                    
                     df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
                     df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
                     
@@ -215,8 +228,9 @@ if menu == "Dashboard":
 
     except Exception as e:
         st.error(f"Erro ao carregar dados do Dashboard: {e}")
+
 # ==========================================
-# TELA 2: METAS & CUSTOS FIXOS (NOVO)
+# TELA 2: METAS & CUSTOS FIXOS
 # ==========================================
 elif menu == "Metas & Custos Fixos":
     st.header("🎯 Metas e Radar de Custos Fixos")
@@ -232,7 +246,6 @@ elif menu == "Metas & Custos Fixos":
         
         tab1, tab2 = st.tabs(["🚦 Metas de Gastos", "🔄 Radar de Assinaturas"])
         
-        # --- TAB 1: METAS ---
         with tab1:
             st.subheader(f"Acompanhamento do Mês: {mes_atual}")
             col1, col2 = st.columns([1, 2])
@@ -264,20 +277,16 @@ elif menu == "Metas & Custos Fixos":
                         percentual = min(gasto_atual / limite, 1.0) if limite > 0 else 1.0
                         
                         cor_barra = "normal"
-                        if percentual >= 0.9:
-                            cor_barra = "error" # Vermelho
-                        elif percentual >= 0.7:
-                            cor_barra = "warning" # Amarelo
+                        if percentual >= 0.9: cor_barra = "error"
+                        elif percentual >= 0.7: cor_barra = "warning"
                             
                         st.write(f"**{meta.category}**: R$ {gasto_atual:.2f} de R$ {limite:.2f}")
                         st.progress(percentual, text=f"{percentual*100:.1f}% utilizado")
 
-        # --- TAB 2: CUSTOS FIXOS ---
         with tab2:
             st.subheader("Radar de Recorrências (Seu custo de vida)")
             st.write("Identificamos essas despesas se repetindo em vários meses.")
             
-            # Lógica: Agrupa por descrição, conta meses distintos e tira média
             assinaturas = df.groupby('description').agg(
                 meses_cobrados=('month_year', 'nunique'),
                 valor_medio=('amount', 'mean'),
@@ -300,7 +309,7 @@ elif menu == "Metas & Custos Fixos":
     db.close()
 
 # ==========================================
-# TELA 3: IMPORTAÇÃO E IA (NOVO BOTÃO MAGICO)
+# TELA 3: IMPORTAÇÃO E IA 
 # ==========================================
 elif menu == "Importar Fatura":
     st.header("📥 Importar e Categorizar")
@@ -416,8 +425,6 @@ elif menu == "Importar Fatura":
                         
                         alteradas = 0
                         for compra in compras_outros:
-                            # Tenta encontrar a descrição no dicionário retornado pela IA
-                            # Como a IA pode mudar levemente a string (remover espaços), fazemos um fallback seguro
                             cat_nova = mapeamento_ia.get(compra.description)
                             if cat_nova:
                                 compra.category = cat_nova
