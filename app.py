@@ -140,8 +140,8 @@ seed_rules()
 # ==========================================
 # NAVEGAÇÃO
 # ==========================================
-st.sidebar.markdown("<h1 style='text-align: center; color: #FF8A00; font-weight: 900; margin-bottom: 0;'>💳 Wallet</h1>", unsafe_allow_html=True)
-st.sidebar.markdown("<p style='text-align: center; color: #888; font-size: 12px; margin-bottom: 30px;'>FinanceHub Premium</p>", unsafe_allow_html=True)
+st.sidebar.markdown("<h1 style='text-align: center; color: #FF8A00; font-weight: 900; margin-bottom: 0;'>💳 Rech's Finance</h1>", unsafe_allow_html=True)
+st.sidebar.markdown("<p style='text-align: center; color: #888; font-size: 12px; margin-bottom: 30px;'>FinanceHub Dashboard</p>", unsafe_allow_html=True)
 
 menu = st.sidebar.radio("Menu Principal", [
     "Dashboard", 
