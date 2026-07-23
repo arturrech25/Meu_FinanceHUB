@@ -110,8 +110,6 @@ if menu == "Dashboard":
                 
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}")
-                col2.metric("Total Recebido", f"R$ {total_entradas:,.2f}")
-                col3.metric("Saldo do Período", f"R$ {saldo:,.2f}")
                 col4.metric("Maior Compra", f"R$ {maior_compra:,.2f}")
                 
                 st.markdown("---")
