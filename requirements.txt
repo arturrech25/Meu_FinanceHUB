@@ -4,3 +4,6 @@ plotly
 SQLAlchemy
 google-generativeai
 openpyxl
+streamlit-aggrid
+streamlit-lottie
+requests
