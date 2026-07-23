@@ -190,89 +190,103 @@ if menu == "Dashboard":
 # TELA 2: IMPORTAÇÃO
 # ==========================================
 elif menu == "Importar Fatura":
-    st.header("📥 Importar nova Fatura (C6 Bank)")
-    arquivo = st.file_uploader("Arraste seu arquivo .csv do C6 Bank aqui", type=["csv"])
+    st.header("📥 Importar novas Faturas (C6 Bank)")
     
-    if arquivo is not None:
-        if st.button("Processar Fatura"):
+    # MUDANÇA AQUI: accept_multiple_files=True
+    arquivos = st.file_uploader("Arraste seus arquivos .csv do C6 Bank aqui", type=["csv"], accept_multiple_files=True)
+    
+    # Se a lista de arquivos não estiver vazia
+    if arquivos:
+        if st.button("Processar Faturas"):
             try:
-                df_upload = pd.read_csv(arquivo, sep=';', encoding='utf-8')
-                df_upload.columns = [c.strip().lower() for c in df_upload.columns]
-                
                 db = SessionLocal()
                 
                 # Busca as regras dinâmicas do banco
                 regras_db = db.query(CategoryRule).all()
                 regras = {r.keyword.lower(): r.category for r in regras_db}
                 
-                importados = 0
-                ignorados = 0
+                importados_total = 0
+                ignorados_total = 0
+                
+                # Barra de progresso geral
                 progress_bar = st.progress(0)
-                total_linhas = len(df_upload)
+                passo_atual = 0
                 
-                # Melhoria 1: Track de ocorrências para evitar colisão de Hash em compras idênticas no mesmo dia
+                # Conta o total de linhas em todas as planilhas para a barra de progresso
+                total_linhas_geral = sum([len(pd.read_csv(arq, sep=';', encoding='utf-8')) for arq in arquivos])
+                
+                # Reseta o ponteiro dos arquivos após a contagem
+                for arq in arquivos:
+                    arq.seek(0)
+                
                 ocorrencias = {} 
+                st.info(f"Processando {len(arquivos)} arquivo(s)...")
                 
-                for index, row in df_upload.iterrows():
-                    progress_bar.progress(min((index + 1) / total_linhas, 1.0))
+                # Laço para passar por cada arquivo upado
+                for arquivo in arquivos:
+                    df_upload = pd.read_csv(arquivo, sep=';', encoding='utf-8')
+                    df_upload.columns = [c.strip().lower() for c in df_upload.columns]
                     
-                    date_val = row.get('data de compra')
-                    desc = str(row.get('descrição', 'Desconhecido')).strip()
-                    amount_raw = row.get('valor (em r$)')
-                    categoria_c6 = str(row.get('categoria', '')).strip()
-                    
-                    if pd.isna(amount_raw) or amount_raw == '': 
-                        continue
+                    for index, row in df_upload.iterrows():
+                        passo_atual += 1
+                        progress_bar.progress(min(passo_atual / total_linhas_geral, 1.0))
                         
-                    desc_lower = desc.lower()
-                    termos_ignorados = ["inclusão de pagamento", "pagamento efetuado", "iof", "estorno", "pagamento de fatura"]
-                    if any(termo in desc_lower for termo in termos_ignorados):
-                        continue
-                    
-                    dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
-                    
-                    val_str = str(amount_raw).strip().replace('.', '').replace(',', '.') if ',' in str(amount_raw) and '.' in str(amount_raw) else str(amount_raw).strip().replace(',', '.')
-                    amount = float(val_str)
-                    t_type = "EXPENSE" if amount > 0 else "INCOME"
-                    
-                    # Categorização inteligente (C6 -> Banco de Regras -> Outros)
-                    categoria_definida = "Outros"
-                    if categoria_c6 and categoria_c6.lower() != 'nan':
-                        categoria_definida = categoria_c6.title()
-                    else:
-                        for palavra_chave, categoria_nome in regras.items():
-                            if palavra_chave in desc_lower:
-                                categoria_definida = categoria_nome
-                                break
-                    
-                    # Melhoria 1: Resolução da colisão do Hash
-                    chave_base = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}"
-                    ocorrencias[chave_base] = ocorrencias.get(chave_base, 0) + 1
-                    
-                    # Adiciona a contagem no hash. Ex: Compra 1 ganha final _1, Compra 2 ganha final _2
-                    raw_str = f"{chave_base}_{ocorrencias[chave_base]}".encode('utf-8')
-                    tx_hash = hashlib.sha256(raw_str).hexdigest()
-                    
-                    if db.query(Transaction).filter_by(hash_id=tx_hash).first():
-                        ignorados += 1
-                        continue
-                    
-                    nova_compra = Transaction(
-                        date=dt_obj, description=desc, amount=abs(amount), 
-                        type=t_type, category=categoria_definida, hash_id=tx_hash
-                    )
-                    db.add(nova_compra)
-                    importados += 1
+                        date_val = row.get('data de compra')
+                        desc = str(row.get('descrição', 'Desconhecido')).strip()
+                        amount_raw = row.get('valor (em r$)')
+                        categoria_c6 = str(row.get('categoria', '')).strip()
+                        
+                        if pd.isna(amount_raw) or amount_raw == '': 
+                            continue
+                            
+                        desc_lower = desc.lower()
+                        termos_ignorados = ["inclusão de pagamento", "pagamento efetuado", "iof", "estorno", "pagamento de fatura"]
+                        if any(termo in desc_lower for termo in termos_ignorados):
+                            continue
+                        
+                        dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
+                        
+                        val_str = str(amount_raw).strip().replace('.', '').replace(',', '.') if ',' in str(amount_raw) and '.' in str(amount_raw) else str(amount_raw).strip().replace(',', '.')
+                        amount = float(val_str)
+                        t_type = "EXPENSE" if amount > 0 else "INCOME"
+                        
+                        # Categorização inteligente (C6 -> Banco de Regras -> Outros)
+                        categoria_definida = "Outros"
+                        if categoria_c6 and categoria_c6.lower() != 'nan':
+                            categoria_definida = categoria_c6.title()
+                        else:
+                            for palavra_chave, categoria_nome in regras.items():
+                                if palavra_chave in desc_lower:
+                                    categoria_definida = categoria_nome
+                                    break
+                        
+                        # Resolução da colisão do Hash
+                        chave_base = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}"
+                        ocorrencias[chave_base] = ocorrencias.get(chave_base, 0) + 1
+                        
+                        raw_str = f"{chave_base}_{ocorrencias[chave_base]}".encode('utf-8')
+                        tx_hash = hashlib.sha256(raw_str).hexdigest()
+                        
+                        if db.query(Transaction).filter_by(hash_id=tx_hash).first():
+                            ignorados_total += 1
+                            continue
+                        
+                        nova_compra = Transaction(
+                            date=dt_obj, description=desc, amount=abs(amount), 
+                            type=t_type, category=categoria_definida, hash_id=tx_hash
+                        )
+                        db.add(nova_compra)
+                        importados_total += 1
                 
+                # Salva tudo no banco de uma vez só no final
                 db.commit()
                 db.close()
                 
-                st.success(f"✅ Importação finalizada! {importados} compras salvas. {ignorados} ignoradas (já existiam).")
+                st.success(f"✅ Importação finalizada! {importados_total} compras salvas. {ignorados_total} ignoradas (já existiam).")
                 st.balloons()
                 
             except Exception as e:
-                st.error(f"❌ Erro ao ler a planilha: {e}")
-
+                st.error(f"❌ Erro ao processar as planilhas: {e}")
 # ==========================================
 # TELA 3: CONFIGURAÇÕES (REGRAS DINÂMICAS)
 # ==========================================
