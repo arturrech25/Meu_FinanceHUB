@@ -87,6 +87,9 @@ if menu == "Dashboard":
 # ==========================================
 # TELA 2: IMPORTAÇÃO
 # ==========================================
+# ==========================================
+# TELA 2: IMPORTAÇÃO
+# ==========================================
 elif menu == "Importar Fatura":
     st.header("📥 Importar nova Fatura (C6 Bank)")
     arquivo = st.file_uploader("Arraste seu arquivo .csv do C6 Bank aqui", type=["csv"])
@@ -117,37 +120,34 @@ elif menu == "Importar Fatura":
                     desc = str(row.get('descrição', 'Desconhecido'))
                     amount_raw = row.get('valor (em r$)')
                     
-                    # Se não tiver valor, pula a linha (ex: pagamentos que vem zerados ou erros)
+                    # Se não tiver valor, pula a linha
                     if pd.isna(amount_raw) or amount_raw == '': 
                         continue
                     
-                    # Converte as informações
+                    # Converte data
                     dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
                     
-                    # Limpa formatações variadas de moeda (C6 exporta com ponto: 75.69)
+                    # Converte moeda com segurança (nova regra de conversão)
                     val_str = str(amount_raw).strip()
                     if ',' in val_str and '.' in val_str:
-                        # Se tiver os dois (ex: 1.234,56), remove o ponto e troca vírgula por ponto
                         val_str = val_str.replace('.', '').replace(',', '.')
                     elif ',' in val_str:
-                        # Se só tiver vírgula (ex: 75,69), troca por ponto
                         val_str = val_str.replace(',', '.')
-                    # Se só tiver ponto (ex: 75.69), o Python já entende nativamente.
-
-amount = float(val_str)
+                    
+                    amount = float(val_str)
                     
                     t_type = "EXPENSE" if amount > 0 else "INCOME"
                     
-                    # Cria o código único (hash) para evitar importar a mesma compra duas vezes
+                    # Cria o código único (hash)
                     raw_str = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}".encode('utf-8')
                     tx_hash = hashlib.sha256(raw_str).hexdigest()
                     
-                    # Verifica no banco se essa compra já existe
+                    # Verifica no banco se já existe
                     if db.query(Transaction).filter_by(hash_id=tx_hash).first():
                         ignorados += 1
                         continue
                     
-                    # Prepara a compra para salvar
+                    # Salva
                     nova_compra = Transaction(
                         date=dt_obj, 
                         description=desc, 
@@ -158,19 +158,18 @@ amount = float(val_str)
                     db.add(nova_compra)
                     importados += 1
                 
-                # Salva de vez no banco!
+                # Salva de vez no banco
                 db.commit()
                 db.close()
                 
-                # Mensagem de sucesso
                 st.success(f"✅ Importação finalizada! {importados} compras novas adicionadas. {ignorados} ignoradas (já existiam).")
-                st.balloons() # Mostra balões subindo na tela :)
+                st.balloons()
                 
             except Exception as e:
                 st.error(f"❌ Erro ao ler a planilha: {e}")
 
 # ==========================================
-# TELA 3: CHATBOT
+# TELA 3: CHATBOT (Opcional - Recoloquei aqui caso tenha apagado sem querer)
 # ==========================================
 elif menu == "Assistente IA":
     st.header("💬 Converse com seus dados")
