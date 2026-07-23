@@ -3,6 +3,9 @@ import pandas as pd
 import plotly.express as px
 from sqlalchemy import create_engine
 import os
+import hashlib
+from datetime import datetime
+from sqlalchemy.orm import sessionmaker
 
 # Configuração da Página Web
 st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
@@ -90,10 +93,73 @@ elif menu == "Importar Fatura":
     
     if arquivo is not None:
         if st.button("Processar Fatura"):
-            # Aqui entraria a lógica de leitura e salvamento que fizemos antes
-            # Para manter simples nesta visualização, apenas mostramos sucesso.
-            st.success("Arquivo recebido com sucesso! O FinanceHub processará isso no sistema principal.")
-            st.dataframe(pd.read_csv(arquivo, sep=';').head())
+            try:
+                # 1. Lê a planilha do jeito que o C6 manda (separado por ;)
+                df_upload = pd.read_csv(arquivo, sep=';', encoding='utf-8')
+                df_upload.columns = [c.strip().lower() for c in df_upload.columns]
+                
+                # 2. Conecta no banco de dados para salvar
+                SessionLocal = sessionmaker(bind=engine)
+                db = SessionLocal()
+                
+                importados = 0
+                ignorados = 0
+                
+                # Barra de progresso visual no site
+                progress_bar = st.progress(0)
+                total_linhas = len(df_upload)
+                
+                for index, row in df_upload.iterrows():
+                    # Atualiza barrinha de progresso
+                    progress_bar.progress(min((index + 1) / total_linhas, 1.0))
+                    
+                    date_val = row.get('data de compra')
+                    desc = str(row.get('descrição', 'Desconhecido'))
+                    amount_raw = row.get('valor (em r$)')
+                    
+                    # Se não tiver valor, pula a linha (ex: pagamentos que vem zerados ou erros)
+                    if pd.isna(amount_raw) or amount_raw == '': 
+                        continue
+                    
+                    # Converte as informações
+                    dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
+                    
+                    # Transforma a string do valor do C6 (ex: "1.234,56" ou "12,50") em número
+                    amount_str = str(amount_raw).replace('.', '').replace(',', '.')
+                    amount = float(amount_str)
+                    
+                    t_type = "EXPENSE" if amount > 0 else "INCOME"
+                    
+                    # Cria o código único (hash) para evitar importar a mesma compra duas vezes
+                    raw_str = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}".encode('utf-8')
+                    tx_hash = hashlib.sha256(raw_str).hexdigest()
+                    
+                    # Verifica no banco se essa compra já existe
+                    if db.query(Transaction).filter_by(hash_id=tx_hash).first():
+                        ignorados += 1
+                        continue
+                    
+                    # Prepara a compra para salvar
+                    nova_compra = Transaction(
+                        date=dt_obj, 
+                        description=desc, 
+                        amount=abs(amount), 
+                        type=t_type, 
+                        hash_id=tx_hash
+                    )
+                    db.add(nova_compra)
+                    importados += 1
+                
+                # Salva de vez no banco!
+                db.commit()
+                db.close()
+                
+                # Mensagem de sucesso
+                st.success(f"✅ Importação finalizada! {importados} compras novas adicionadas. {ignorados} ignoradas (já existiam).")
+                st.balloons() # Mostra balões subindo na tela :)
+                
+            except Exception as e:
+                st.error(f"❌ Erro ao ler a planilha: {e}")
 
 # ==========================================
 # TELA 3: CHATBOT
