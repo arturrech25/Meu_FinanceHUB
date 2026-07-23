@@ -87,8 +87,7 @@ if menu == "Dashboard":
                 
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}")
-                
-                col4.metric("Maior Compra", f"R$ {maior_compra:,.2f}", help=f"Estabelecimento: {nome_maior_compra}")
+                col2.metric("Maior Compra", f"R$ {maior_compra:,.2f}", help=f"Estabelecimento: {nome_maior_compra}")
                 
                 st.markdown("---")
                 
