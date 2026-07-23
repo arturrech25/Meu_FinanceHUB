@@ -8,7 +8,7 @@ import os
 st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
 
 # Conecta ao seu banco de dados no Google Drive
-DB_PATH = '/content/drive/MyDrive/FinanceHub/financehub.db'
+DB_PATH = 'financehub.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
 
 # Título do App
