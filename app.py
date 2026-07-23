@@ -125,14 +125,17 @@ if menu == "Dashboard":
                 col_grafico1, col_grafico2 = st.columns(2)
                 
                 with col_grafico1:
-                    resumo_fluxo = df[df['category'].isin(categorias_selecionadas)].groupby(['month_year', 'type'])['amount'].sum().reset_index()
-                    # Padroniza nomes para o gráfico
-                    resumo_fluxo['type'] = resumo_fluxo['type'].map({'EXPENSE': 'Despesa', 'INCOME': 'Entrada'})
-                    fig1 = px.bar(resumo_fluxo, x='month_year', y='amount', color='type', barmode='group',
-                                  title="📈 Fluxo de Caixa (Entradas vs Saídas)", color_discrete_map={'Despesa': '#EF4444', 'Entrada': '#10B981'})
+                    # Agrupa apenas as DESPESAS por mês
+                    gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
+                    fig1 = px.bar(gastos_mes, x='month_year', y='amount', 
+                                  title="📉 Evolução de Despesas", 
+                                  text_auto='.2s', 
+                                  color_discrete_sequence=['#EF4444'])
+                    fig1.update_traces(textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
                     st.plotly_chart(fig1, use_container_width=True)
                     
                 with col_grafico2:
+                    # Gráfico de pizza também focado só nas despesas
                     gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
                     fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.5, title="🍩 Despesas por Categoria (Período Selecionado)")
                     fig2.update_traces(textposition='inside', textinfo='percent')
