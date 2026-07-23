@@ -343,40 +343,62 @@ elif menu == "Assistente IA":
         if api_key:
             genai.configure(api_key=api_key)
             
-            # MUDANÇA AQUI: Trocamos o nome do modelo para a versão suportada atual
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            df = pd.read_sql("SELECT date, description, amount, type, category FROM transactions", engine)
-            
-            if df.empty:
-                st.warning("Seu banco de dados está vazio. Importe transações primeiro.")
-            else:
-                st.success("IA conectada e pronta para ler seus dados!")
+            try:
+                # --- SISTEMA DE BUSCA AUTOMÁTICA DE MODELO ---
+                modelos_validos = [
+                    m.name for m in genai.list_models() 
+                    if 'generateContent' in m.supported_generation_methods
+                ]
                 
-                # Criando um resumo dos dados para não estourar o limite de tokens
-                resumo_por_categoria = df.groupby(['category', 'type'])['amount'].sum().to_dict()
-                compras_recentes = df.sort_values(by='date', ascending=False).head(20).to_string(index=False)
-                
-                contexto_dados = textwrap.dedent(f"""
-                Você é um consultor financeiro pessoal amigável e direto. 
-                Aqui está um resumo dos gastos do usuário:
-                Totais por categoria/tipo: {resumo_por_categoria}
-                
-                Últimas 20 transações:
-                {compras_recentes}
-                """)
-                
-                pergunta = st.chat_input("Ex: Quais categorias estão drenando meu dinheiro?")
-                
-                if pergunta:
-                    with st.chat_message("user"):
-                        st.write(pergunta)
+                if not modelos_validos:
+                    st.error("Sua chave de API não tem acesso a nenhum modelo de geração de texto no momento.")
+                else:
+                    # Tenta achar um modelo "flash" (rápido) ou "pro" (inteligente) na lista
+                    nome_modelo = modelos_validos[0] # Pega o primeiro por padrão
+                    for m in modelos_validos:
+                        if 'flash' in m:
+                            nome_modelo = m
+                            break
+                        elif 'pro' in m and 'vision' not in m:
+                            nome_modelo = m
+                    
+                    # Limpa o prefixo 'models/' que a API retorna
+                    nome_modelo = nome_modelo.replace('models/', '')
+                    
+                    model = genai.GenerativeModel(nome_modelo)
+                    
+                    df = pd.read_sql("SELECT date, description, amount, type, category FROM transactions", engine)
+                    
+                    if df.empty:
+                        st.warning("Seu banco de dados está vazio. Importe transações primeiro.")
+                    else:
+                        st.success(f"✅ IA conectada com sucesso usando o modelo: {nome_modelo}")
                         
-                    with st.chat_message("assistant"):
-                        with st.spinner("Analisando suas finanças..."):
-                            prompt = f"{contexto_dados}\n\nO usuário pergunta: {pergunta}"
-                            try:
-                                resposta = model.generate_content(prompt)
-                                st.write(resposta.text)
-                            except Exception as e:
-                                st.error(f"Erro na IA: {e}")
+                        resumo_por_categoria = df.groupby(['category', 'type'])['amount'].sum().to_dict()
+                        compras_recentes = df.sort_values(by='date', ascending=False).head(20).to_string(index=False)
+                        
+                        contexto_dados = textwrap.dedent(f"""
+                        Você é um consultor financeiro pessoal amigável e direto. 
+                        Aqui está um resumo dos gastos do usuário:
+                        Totais por categoria/tipo: {resumo_por_categoria}
+                        
+                        Últimas 20 transações:
+                        {compras_recentes}
+                        """)
+                        
+                        pergunta = st.chat_input("Ex: Quais categorias estão drenando meu dinheiro?")
+                        
+                        if pergunta:
+                            with st.chat_message("user"):
+                                st.write(pergunta)
+                                
+                            with st.chat_message("assistant"):
+                                with st.spinner("Analisando suas finanças..."):
+                                    prompt = f"{contexto_dados}\n\nO usuário pergunta: {pergunta}"
+                                    try:
+                                        resposta = model.generate_content(prompt)
+                                        st.write(resposta.text)
+                                    except Exception as e:
+                                        st.error(f"Erro na geração da resposta: {e}")
+            except Exception as e:
+                st.error(f"Erro ao conectar com a API do Google: {e}")
