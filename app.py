@@ -342,7 +342,9 @@ elif menu == "Assistente IA":
         
         if api_key:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            
+            # MUDANÇA AQUI: Trocamos o nome do modelo para a versão suportada atual
+            model = genai.GenerativeModel('gemini-1.5-flash')
             
             df = pd.read_sql("SELECT date, description, amount, type, category FROM transactions", engine)
             
