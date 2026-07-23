@@ -7,6 +7,11 @@ import hashlib
 from datetime import datetime
 import textwrap
 import io
+import requests
+
+# Importações Avançadas (AgGrid e Lottie)
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from streamlit_lottie import st_lottie
 
 try:
     import google.generativeai as genai
@@ -15,28 +20,65 @@ except ImportError:
     HAS_AI = False
 
 # ==========================================
-# CONFIGURAÇÃO INICIAL, CSS E BANCO DE DADOS
+# CONFIGURAÇÃO INICIAL E CSS AVANÇADO
 # ==========================================
-st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
+st.set_page_config(page_title="FinanceHub Premium", page_icon="💳", layout="wide")
 
-# CSS Customizado (A "Mágica" do visual Dark UI)
 st.markdown("""
 <style>
-    /* Estiliza os blocos de métricas */
-    [data-testid="stMetric"] {
-        background-color: #1E2129;
-        border-radius: 15px;
-        padding: 20px;
-        border: 1px solid #2A2D35;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-    
-    /* Esconde o menu superior padrão do Streamlit */
+    /* Esconde cabeçalho padrão e rodape */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Customização da Barra de Rolagem (Estilo App Nativo) */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0E1117; }
+    ::-webkit-scrollbar-thumb { background: #2A2D35; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #FF8A00; }
+    
+    /* Botões Glow (Primários) */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(90deg, #FF8A00 0%, #E57A00 100%);
+        color: white;
+        border: none;
+        box-shadow: 0 4px 15px rgba(255, 138, 0, 0.3);
+        transition: all 0.3s ease;
+    }
+    .stButton > button[kind="primary"]:hover {
+        box-shadow: 0 6px 20px rgba(255, 138, 0, 0.6);
+        transform: translateY(-2px);
+    }
 </style>
 """, unsafe_allow_html=True)
 
+# Função para carregar animações Lottie da Web
+@st.cache_data
+def load_lottieurl(url: str):
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+# Função para desenhar Cartões VIP HTML/CSS
+def render_metric_card(title, value, subtitle=""):
+    html = f"""
+    <div style='background: linear-gradient(135deg, #1E2129 0%, #14171F 100%);
+                border: 1px solid #2A2D35; border-radius: 15px; padding: 25px;
+                box-shadow: 0 8px 20px rgba(0,0,0,0.4); border-left: 4px solid #FF8A00;
+                font-family: sans-serif; transition: transform 0.3s ease, border-color 0.3s ease;'
+                onmouseover='this.style.transform="translateY(-5px)"; this.style.borderColor="#FF8A00";'
+                onmouseout='this.style.transform="translateY(0)"; this.style.borderColor="#2A2D35";'>
+        <div style='color: #A0AEC0; font-size: 13px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;'>{title}</div>
+        <div style='color: #FFFFFF; font-size: 38px; font-weight: 800; margin: 10px 0; font-family: "Courier New", monospace;'>{value}</div>
+        <div style='color: #48BB78; font-size: 13px; font-weight: 600;'>{subtitle}</div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+# ==========================================
+# BANCO DE DADOS
+# ==========================================
 DB_PATH = 'financehub_v7.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
 Base = declarative_base()
@@ -70,10 +112,8 @@ def seed_rules():
     db = SessionLocal()
     if db.query(CategoryRule).count() == 0:
         regras_iniciais = {
-            'ifood': 'Alimentação', 'mcdonalds': 'Alimentação', 'padaria': 'Alimentação',
-            'uber': 'Transporte', '99app': 'Transporte', 'posto': 'Combustível',
-            'farmacia': 'Saúde', 'netflix': 'Assinaturas', 'spotify': 'Assinaturas',
-            'amazon': 'Compras', 'mercado': 'Mercado'
+            'ifood': 'Alimentação', 'uber': 'Transporte', 'posto': 'Combustível',
+            'netflix': 'Assinaturas', 'spotify': 'Assinaturas', 'mercado': 'Mercado'
         }
         for kw, cat in regras_iniciais.items():
             db.add(CategoryRule(keyword=kw, category=cat))
@@ -82,12 +122,12 @@ def seed_rules():
 seed_rules()
 
 # ==========================================
-# MENU E NAVEGAÇÃO
+# NAVEGAÇÃO
 # ==========================================
-st.title("💸 FinanceHub - Wallet")
-st.markdown("---")
+st.sidebar.markdown("<h1 style='text-align: center; color: #FF8A00; font-weight: 900; margin-bottom: 0;'>💳 Wallet</h1>", unsafe_allow_html=True)
+st.sidebar.markdown("<p style='text-align: center; color: #888; font-size: 12px; margin-bottom: 30px;'>FinanceHub Premium</p>", unsafe_allow_html=True)
 
-menu = st.sidebar.radio("Navegação", ["Dashboard", "Metas & Custos Fixos", "Importar Fatura", "Configurações", "Assistente IA"])
+menu = st.sidebar.radio("Menu Principal", ["Dashboard", "Metas & Custos Fixos", "Importar Fatura", "Configurações", "Assistente IA"])
 
 # ==========================================
 # TELA 1: DASHBOARD
@@ -105,115 +145,92 @@ if menu == "Dashboard":
             st.sidebar.markdown("---")
             st.sidebar.subheader("Filtros do Dashboard")
             meses_disponiveis = sorted(df['month_year'].unique(), reverse=True)
-            meses_selecionados = st.sidebar.multiselect("📅 Selecione os Meses", meses_disponiveis, default=[meses_disponiveis[0]] if meses_disponiveis else [])
+            meses_selecionados = st.sidebar.multiselect("📅 Meses", meses_disponiveis, default=[meses_disponiveis[0]] if meses_disponiveis else [])
             
             categorias_disponiveis = sorted(df['category'].unique())
-            categorias_selecionadas = st.sidebar.multiselect("🏷️ Filtrar Categorias", categorias_disponiveis, default=categorias_disponiveis)
+            categorias_selecionadas = st.sidebar.multiselect("🏷️ Categorias", categorias_disponiveis, default=categorias_disponiveis)
             
             df_filtrado = df[(df['month_year'].isin(meses_selecionados)) & (df['category'].isin(categorias_selecionadas))]
             
             if df_filtrado.empty:
-                st.info("Nenhum dado encontrado para os filtros selecionados.")
+                st.info("Nenhum dado encontrado.")
             else:
                 despesas = df_filtrado[df_filtrado['type'] == 'EXPENSE']
                 total_gasto = despesas['amount'].sum()
                 
-                # --- MÉTRICA ÚNICA (Destaque principal) ---
-                col_metric, _ = st.columns([1, 3]) 
+                # --- MÉTRICA COM HTML/CSS CUSTOMIZADO ---
+                col_metric, _ = st.columns([1, 2]) 
                 with col_metric:
-                    st.metric("Balance (Total Gasto)", f"R$ {total_gasto:,.2f}")
-                
+                    render_metric_card("Balance Total (Gastos)", f"R$ {total_gasto:,.2f}", f"Analisando {len(meses_selecionados)} mês(es)")
                 st.write("") 
                 
-                # --- GRÁFICOS LINHA 1 ---
-                col_grafico1, col_grafico2 = st.columns(2)
-                with col_grafico1:
+                # --- GRÁFICOS ---
+                col_g1, col_g2 = st.columns(2)
+                with col_g1:
                     with st.container(border=True):
                         gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
-                        fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução de Despesas por Mês", text_auto='.2s')
-                        
-                        fig1.update_traces(marker_color='#FF8A00', textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
-                        fig1.update_layout(
-                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                            xaxis=dict(showgrid=False, zeroline=False),
-                            yaxis=dict(showgrid=False, zeroline=False, visible=False)
-                        )
+                        fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução Mensal", text_auto='.2s')
+                        fig1.update_traces(marker_color='#FF8A00', textfont_size=12, textposition="outside", cliponaxis=False)
+                        fig1.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', xaxis_title=None, yaxis_title=None, xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, visible=False))
                         st.plotly_chart(fig1, use_container_width=True)
                     
-                with col_grafico2:
+                with col_g2:
                     with st.container(border=True):
                         gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
-                        fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.6, title="🍩 Distribuição por Categoria")
-                        fig2.update_traces(textposition='inside', textinfo='percent', marker=dict(line=dict(color='#0E1117', width=2)))
-                        fig2.update_layout(
-                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                            height=400, margin=dict(t=50, b=0, l=20, r=20),
-                            legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
-                        )
+                        fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.7, title="🍩 Categorias")
+                        fig2.update_traces(textposition='inside', textinfo='percent', marker=dict(line=dict(color='#0E1117', width=3)))
+                        fig2.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(t=40, b=0, l=0, r=0), legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
                         st.plotly_chart(fig2, use_container_width=True)
                 
-                # --- GRÁFICOS LINHA 2 (ATUALIZADA) ---
-                col_grafico3, col_grafico4 = st.columns(2)
-                
-                with col_grafico3:
+                col_g3, col_g4 = st.columns(2)
+                with col_g3:
                     with st.container(border=True):
-                        # Gasto por Dia da Semana
                         df_dias = despesas.copy()
-                        df_dias['dia_semana'] = df_dias['date'].dt.day_name().map({
-                            'Monday': 'Segunda', 'Tuesday': 'Terça', 'Wednesday': 'Quarta',
-                            'Thursday': 'Quinta', 'Friday': 'Sexta', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-                        })
-                        ordem_dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-                        gastos_semana = df_dias.groupby('dia_semana')['amount'].sum().reindex(ordem_dias).reset_index().fillna(0)
-                        
-                        fig3 = px.bar(gastos_semana, x='dia_semana', y='amount', title="📅 Hábitos por Dia da Semana", text_auto='.2s')
-                        fig3.update_traces(marker_color='#FF8A00', marker_line_width=0, opacity=0.9, textfont_size=12, textposition="outside", cliponaxis=False)
-                        fig3.update_layout(
-                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                            xaxis_title=None, yaxis_title=None,
-                            xaxis=dict(showgrid=False, zeroline=False),
-                            yaxis=dict(showgrid=False, zeroline=False, visible=False),
-                            margin=dict(l=0, r=0, t=50, b=0)
-                        )
+                        df_dias['dia_semana'] = df_dias['date'].dt.day_name().map({'Monday':'Seg', 'Tuesday':'Ter', 'Wednesday':'Qua', 'Thursday':'Qui', 'Friday':'Sex', 'Saturday':'Sáb', 'Sunday':'Dom'})
+                        gastos_semana = df_dias.groupby('dia_semana')['amount'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']).reset_index().fillna(0)
+                        fig3 = px.bar(gastos_semana, x='dia_semana', y='amount', title="📅 Hábitos por Dia", text_auto='.2s')
+                        fig3.update_traces(marker_color='#FF8A00', opacity=0.9, textposition="outside", cliponaxis=False)
+                        fig3.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', xaxis_title=None, yaxis_title=None, xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, visible=False))
                         st.plotly_chart(fig3, use_container_width=True)
                         
-                with col_grafico4:
+                with col_g4:
                     with st.container(border=True):
-                        # Top 5 Categorias (Agregado)
                         top5_cat = despesas.groupby('category')['amount'].sum().reset_index().nlargest(5, 'amount').sort_values(by='amount', ascending=True)
-                        
-                        fig4 = px.bar(top5_cat, x='amount', y='category', orientation='h', title="🏆 Top 5 Maiores Categorias", text_auto='.2s')
-                        fig4.update_traces(marker_color='#FF8A00', textfont_size=12, textposition="outside", cliponaxis=False)
-                        fig4.update_layout(
-                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                            yaxis_title=None, xaxis_title=None,
-                            xaxis=dict(showgrid=False, zeroline=False, visible=False),
-                            margin=dict(l=0, r=0, t=50, b=0)
-                        )
+                        fig4 = px.bar(top5_cat, x='amount', y='category', orientation='h', title="🏆 Top 5 Ralôs", text_auto='.2s')
+                        fig4.update_traces(marker_color='#FF8A00', textposition="outside", cliponaxis=False)
+                        fig4.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', yaxis_title=None, xaxis_title=None, xaxis=dict(showgrid=False, visible=False))
                         st.plotly_chart(fig4, use_container_width=True)
                 
-                # --- TABELA E EXPORTAÇÃO ---
-                with st.expander("🛠️ Ver/Editar Histórico Detalhado e Exportar", expanded=False):
+                # --- AG-GRID: TABELA DE ALTA PERFORMANCE ---
+                with st.expander("🛠️ Modo Planilha: Editar Histórico e Exportar", expanded=False):
+                    st.markdown("<p style='color: #FF8A00; font-size: 14px;'>De duplo-clique na coluna 'Categoria' para alterar os dados. Depois clique em Salvar.</p>", unsafe_allow_html=True)
                     df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
                     df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
                     
-                    edited_df = st.data_editor(
-                        df_mostrar, use_container_width=True, hide_index=True,
-                        column_config={
-                            "id": None, "date": st.column_config.TextColumn("Data", disabled=True),
-                            "description": st.column_config.TextColumn("Descrição", disabled=True),
-                            "amount": st.column_config.NumberColumn("Valor (R$)", disabled=True),
-                            "type": st.column_config.TextColumn("Tipo", disabled=True),
-                            "category": st.column_config.SelectboxColumn("Categoria", options=categorias_disponiveis + ["Nova Categoria..."])
-                        }
+                    # Configurando o Ag-Grid
+                    gb = GridOptionsBuilder.from_dataframe(df_mostrar)
+                    gb.configure_column("id", hide=True)
+                    gb.configure_column("type", hide=True)
+                    gb.configure_default_column(resizable=True, sortable=True, filter=True)
+                    gb.configure_column("category", editable=True, cellEditor='agSelectCellEditor', cellEditorParams={'values': categorias_disponiveis + ["Nova..."]})
+                    gridOptions = gb.build()
+                    
+                    grid_response = AgGrid(
+                        df_mostrar,
+                        gridOptions=gridOptions,
+                        update_mode=GridUpdateMode.MODEL_CHANGED,
+                        fit_columns_on_grid_load=True,
+                        theme="alpine"
                     )
                     
-                    col_btn1, col_btn2 = st.columns([1, 1])
+                    col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
-                        if st.button("💾 Salvar Categorias", type="primary", use_container_width=True):
+                        if st.button("💾 Salvar Edições do Ag-Grid", type="primary", use_container_width=True):
                             db = SessionLocal()
                             alteracoes = 0
-                            for index, row in edited_df.iterrows():
+                            # Pega os dados que voltaram da tabela editada
+                            df_editado = pd.DataFrame(grid_response['data'])
+                            for index, row in df_editado.iterrows():
                                 old_cat = df_mostrar.loc[index, 'category']
                                 if old_cat != row['category']:
                                     db.query(Transaction).filter_by(id=row['id']).update({"category": row['category']})
@@ -221,296 +238,238 @@ if menu == "Dashboard":
                             db.commit()
                             db.close()
                             if alteracoes > 0:
-                                st.success(f"{alteracoes} atualizadas!")
+                                st.success(f"{alteracoes} linhas atualizadas no banco!")
                                 st.rerun()
-                    
+                                
                     with col_btn2:
                         buffer = io.BytesIO()
                         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                            df_mostrar.drop(columns=['id']).to_excel(writer, index=False, sheet_name='Transações')
-                        
-                        st.download_button(
-                            label="📥 Baixar Relatório em Excel",
-                            data=buffer.getvalue(),
-                            file_name=f"FinanceHub_Relatorio_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
-                        )
+                            df_mostrar.drop(columns=['id', 'type']).to_excel(writer, index=False, sheet_name='Transações')
+                        st.download_button("📥 Exportar Relatório .XLSX", data=buffer.getvalue(), file_name=f"Relatorio_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
     except Exception as e:
-        st.error(f"Erro ao carregar dados do Dashboard: {e}")
+        st.error(f"Erro: {e}")
 
 # ==========================================
 # TELA 2: METAS & CUSTOS FIXOS
 # ==========================================
 elif menu == "Metas & Custos Fixos":
-    st.header("🎯 Metas e Radar de Custos Fixos")
+    st.header("🎯 Inteligência Financeira")
     db = SessionLocal()
     df = pd.read_sql("SELECT * FROM transactions WHERE type='EXPENSE'", engine)
     
-    if df.empty:
-        st.warning("Você precisa importar transações primeiro.")
+    if df.empty: st.warning("Importe transações primeiro.")
     else:
         df['date'] = pd.to_datetime(df['date'])
         df['month_year'] = df['date'].dt.to_period('M').astype(str)
         mes_atual = df['month_year'].max()
         
-        tab1, tab2 = st.tabs(["🚦 Metas de Gastos", "🔄 Radar de Assinaturas"])
+        tab1, tab2 = st.tabs(["🚦 Monitor de Metas (Budgets)", "🔄 Radar de Assinaturas"])
         
         with tab1:
-            st.subheader(f"Acompanhamento do Mês: {mes_atual}")
+            st.write(f"### Controle em Tempo Real ({mes_atual})")
             col1, col2 = st.columns([1, 2])
             
             with col1:
-                st.write("**Definir Nova Meta**")
-                categorias_existentes = sorted(df['category'].unique())
-                cat_meta = st.selectbox("Categoria", categorias_existentes)
-                val_meta = st.number_input("Limite Máximo (R$)", min_value=0.0, step=50.0)
-                if st.button("Salvar Meta"):
+                st.markdown("<div style='background: #14171F; padding: 20px; border-radius: 10px; border: 1px solid #2A2D35;'>", unsafe_allow_html=True)
+                cat_meta = st.selectbox("Categoria", sorted(df['category'].unique()))
+                val_meta = st.number_input("Teto Mensal (R$)", min_value=0.0, step=100.0)
+                if st.button("Definir Budget", type="primary", use_container_width=True):
                     meta_existente = db.query(Budget).filter_by(category=cat_meta).first()
-                    if meta_existente:
-                        meta_existente.limit_amount = val_meta
-                    else:
-                        db.add(Budget(category=cat_meta, limit_amount=val_meta))
+                    if meta_existente: meta_existente.limit_amount = val_meta
+                    else: db.add(Budget(category=cat_meta, limit_amount=val_meta))
                     db.commit()
-                    st.success("Meta atualizada!")
+                    st.success("Teto estabelecido!")
                     st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
             
             with col2:
                 metas_db = db.query(Budget).all()
-                if not metas_db:
-                    st.info("Nenhuma meta definida. Crie uma ao lado.")
+                if not metas_db: st.info("Defina limites para habilitar os termômetros.")
                 else:
                     df_mes_atual = df[df['month_year'] == mes_atual]
                     for meta in metas_db:
-                        gasto_atual = df_mes_atual[df_mes_atual['category'] == meta.category]['amount'].sum()
+                        gasto = df_mes_atual[df_mes_atual['category'] == meta.category]['amount'].sum()
                         limite = meta.limit_amount
-                        percentual = min(gasto_atual / limite, 1.0) if limite > 0 else 1.0
+                        pct = min((gasto / limite) * 100, 100) if limite > 0 else 100
                         
-                        cor_barra = "normal"
-                        if percentual >= 0.9: cor_barra = "error"
-                        elif percentual >= 0.7: cor_barra = "warning"
-                            
-                        st.write(f"**{meta.category}**: R$ {gasto_atual:.2f} de R$ {limite:.2f}")
-                        st.progress(percentual, text=f"{percentual*100:.1f}% utilizado")
+                        cor_barra = "#48BB78" if pct < 75 else ("#F6E05E" if pct < 90 else "#F56565")
+                        
+                        # Componente de Barra de Progresso HTML customizada
+                        html_bar = f"""
+                        <div style='margin-bottom: 15px;'>
+                            <div style='display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px;'>
+                                <span style='font-weight: bold; color: white;'>{meta.category}</span>
+                                <span style='color: #A0AEC0;'>R$ {gasto:.2f} / R$ {limite:.2f}</span>
+                            </div>
+                            <div style="width: 100%; background-color: #2A2D35; border-radius: 10px; overflow: hidden; height: 12px;">
+                                <div style="width: {pct}%; background-color: {cor_barra}; height: 100%; border-radius: 10px; transition: width 0.8s ease;"></div>
+                            </div>
+                        </div>
+                        """
+                        st.markdown(html_bar, unsafe_allow_html=True)
 
         with tab2:
-            st.subheader("Radar de Recorrências (Seu custo de vida)")
-            st.write("Identificamos essas despesas se repetindo em vários meses.")
+            st.subheader("Seus Custos Invisíveis")
+            assinaturas = df.groupby('description').agg(meses=('month_year', 'nunique'), valor=('amount', 'mean')).reset_index()
+            assinaturas = assinaturas[assinaturas['meses'] >= 2].sort_values('valor', ascending=False)
             
-            assinaturas = df.groupby('description').agg(
-                meses_cobrados=('month_year', 'nunique'),
-                valor_medio=('amount', 'mean'),
-                ultima_compra=('date', 'max')
-            ).reset_index()
-            
-            assinaturas = assinaturas[assinaturas['meses_cobrados'] >= 2]
-            assinaturas = assinaturas.sort_values('valor_medio', ascending=False)
-            
-            if assinaturas.empty:
-                st.info("Nenhum custo recorrente identificado ainda.")
+            if assinaturas.empty: st.info("Nenhuma recorrência identificada.")
             else:
-                custo_fixo_total = assinaturas['valor_medio'].sum()
-                st.metric("Estimativa de Custo Fixo Base", f"R$ {custo_fixo_total:,.2f} / mês")
+                render_metric_card("Seu Custo de Vida Fixo Base", f"R$ {assinaturas['valor'].sum():,.2f}")
+                st.write("")
+                assinaturas.columns = ['Serviço / Estabelecimento', 'Meses Cobrados', 'Média de Valor (R$)']
                 
-                assinaturas['ultima_compra'] = assinaturas['ultima_compra'].dt.strftime('%d/%m/%Y')
-                assinaturas.columns = ['Descrição', 'Meses Cobrados', 'Valor Médio (R$)', 'Última Cobrança']
-                st.dataframe(assinaturas, use_container_width=True, hide_index=True)
-                
+                # AgGrid para visualização bonita
+                AgGrid(assinaturas, fit_columns_on_grid_load=True, theme="alpine")
     db.close()
 
 # ==========================================
-# TELA 3: IMPORTAÇÃO E IA 
+# TELA 3: IMPORTAÇÃO E MAGIA
 # ==========================================
 elif menu == "Importar Fatura":
-    st.header("📥 Importar e Categorizar")
-    arquivos = st.file_uploader("Arraste seus arquivos .csv do C6 Bank aqui", type=["csv"], accept_multiple_files=True)
+    st.header("📥 Processamento e Triagem")
+    arquivos = st.file_uploader("Drop seus arquivos .csv aqui (C6 Bank)", type=["csv"], accept_multiple_files=True)
     
     if arquivos:
-        if st.button("Processar Faturas"):
+        if st.button("🚀 Processar Dumps", type="primary"):
             try:
                 db = SessionLocal()
                 regras = {r.keyword.lower(): r.category for r in db.query(CategoryRule).all()}
-                
-                importados_total = ignorados_total = passo_atual = 0
-                progress_bar = st.progress(0)
-                total_linhas_geral = sum([len(pd.read_csv(arq, sep=';', encoding='utf-8')) for arq in arquivos])
-                for arq in arquivos: arq.seek(0)
+                importados = ignorados = passo = 0
+                total_linhas = sum([len(pd.read_csv(a, sep=';', encoding='utf-8')) for a in arquivos])
+                for a in arquivos: a.seek(0)
                 ocorrencias = {} 
+                bar = st.progress(0)
                 
                 for arquivo in arquivos:
-                    df_upload = pd.read_csv(arquivo, sep=';', encoding='utf-8')
-                    df_upload.columns = [c.strip().lower() for c in df_upload.columns]
+                    df_up = pd.read_csv(arquivo, sep=';', encoding='utf-8')
+                    df_up.columns = [c.strip().lower() for c in df_up.columns]
                     
-                    for index, row in df_upload.iterrows():
-                        passo_atual += 1
-                        progress_bar.progress(min(passo_atual / total_linhas_geral, 1.0))
+                    for index, row in df_up.iterrows():
+                        passo += 1
+                        bar.progress(min(passo / total_linhas, 1.0))
                         
-                        date_val = row.get('data de compra')
-                        desc = str(row.get('descrição', 'Desconhecido')).strip()
-                        amount_raw = row.get('valor (em r$)')
-                        categoria_c6 = str(row.get('categoria', '')).strip()
+                        dt, desc, amt, cat_c6 = row.get('data de compra'), str(row.get('descrição', '')).strip(), row.get('valor (em r$)'), str(row.get('categoria', '')).strip()
+                        if pd.isna(amt) or amt == '' or any(t in desc.lower() for t in ["inclusão de pagamento", "iof", "estorno", "pagamento de fatura"]): continue
                         
-                        if pd.isna(amount_raw) or amount_raw == '': continue
-                        if any(termo in desc.lower() for termo in ["inclusão de pagamento", "pagamento efetuado", "iof", "estorno", "pagamento de fatura"]): continue
+                        dt_obj = datetime.strptime(str(dt), "%d/%m/%Y").date()
+                        val_str = str(amt).replace('.', '').replace(',', '.') if ',' in str(amt) and '.' in str(amt) else str(amt).replace(',', '.')
+                        val = float(val_str)
                         
-                        dt_obj = datetime.strptime(str(date_val), "%d/%m/%Y").date()
-                        val_str = str(amount_raw).strip().replace('.', '').replace(',', '.') if ',' in str(amount_raw) and '.' in str(amount_raw) else str(amount_raw).strip().replace(',', '.')
-                        amount = float(val_str)
+                        cat_def = cat_c6.title() if cat_c6 and cat_c6.lower() != 'nan' else "Outros"
+                        if cat_def == "Outros":
+                            for k, v in regras.items():
+                                if k in desc.lower(): cat_def = v; break
                         
-                        categoria_definida = "Outros"
-                        if categoria_c6 and categoria_c6.lower() != 'nan':
-                            categoria_definida = categoria_c6.title()
-                        else:
-                            for palavra_chave, categoria_nome in regras.items():
-                                if palavra_chave in desc.lower():
-                                    categoria_definida = categoria_nome
-                                    break
+                        hash_base = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{val}"
+                        ocorrencias[hash_base] = ocorrencias.get(hash_base, 0) + 1
+                        tx_hash = hashlib.sha256(f"{hash_base}_{ocorrencias[hash_base]}".encode('utf-8')).hexdigest()
                         
-                        chave_base = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}"
-                        ocorrencias[chave_base] = ocorrencias.get(chave_base, 0) + 1
-                        tx_hash = hashlib.sha256(f"{chave_base}_{ocorrencias[chave_base]}".encode('utf-8')).hexdigest()
-                        
-                        if db.query(Transaction).filter_by(hash_id=tx_hash).first():
-                            ignorados_total += 1
-                            continue
-                        
-                        db.add(Transaction(date=dt_obj, description=desc, amount=abs(amount), type="EXPENSE" if amount > 0 else "INCOME", category=categoria_definida, hash_id=tx_hash))
-                        importados_total += 1
+                        if db.query(Transaction).filter_by(hash_id=tx_hash).first(): ignorados += 1; continue
+                        db.add(Transaction(date=dt_obj, description=desc, amount=abs(val), type="EXPENSE" if val > 0 else "INCOME", category=cat_def, hash_id=tx_hash))
+                        importados += 1
                 db.commit()
                 db.close()
-                st.success(f"✅ {importados_total} salvas. {ignorados_total} ignoradas (já existiam).")
-            except Exception as e:
-                st.error(f"❌ Erro: {e}")
-                
+                st.success(f"✅ Sucesso! Inseridas: {importados} | Duplicadas ignoradas: {ignorados}")
+            except Exception as e: st.error(f"Erro: {e}")
+
     st.markdown("---")
-    st.subheader("🪄 Categorização Mágica com IA")
-    st.write("Deixe o Gemini classificar automaticamente todas as suas compras que caíram em 'Outros'.")
-    
-    api_key_import = st.text_input("API Key do Google Gemini:", type="password", key="api_magic")
-    
-    if st.button("🪄 Auto-Categorizar 'Outros'"):
-        if not api_key_import:
-            st.warning("Insira a chave da API acima.")
-        else:
-            db = SessionLocal()
-            compras_outros = db.query(Transaction).filter_by(category="Outros", type="EXPENSE").all()
-            
-            if not compras_outros:
-                st.info("Nenhuma compra classificada como 'Outros' encontrada! 🎉")
+    col1, col2 = st.columns([1,2])
+    with col1:
+        # Lottie Animation para a seção de Mágica
+        lottie_magic = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_p8qulw7z.json")
+        if lottie_magic: st_lottie(lottie_magic, height=200, key="magic")
+        
+    with col2:
+        st.subheader("🪄 Auto-Triagem (Gemini AI)")
+        st.write("A IA classificará compras marcadas como 'Outros' usando suas próprias categorias.")
+        api_key_import = st.text_input("Sua Key do AI Studio:", type="password", key="api_magic")
+        
+        if st.button("Executar Triagem IA", type="primary", use_container_width=True):
+            if not api_key_import: st.warning("Chave ausente.")
             else:
-                genai.configure(api_key=api_key_import)
-                try:
-                    modelos_validos = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                    modelo = next((m for m in modelos_validos if 'flash' in m), modelos_validos[0])
-                    model = genai.GenerativeModel(modelo)
-                    
-                    cats_existentes = list(set([r[0] for r in db.query(Transaction.category).distinct().all() if r[0] != "Outros"]))
-                    if not cats_existentes: cats_existentes = ["Alimentação", "Transporte", "Saúde", "Educação", "Lazer"]
-                    
-                    descricoes_unicas = list(set([c.description for c in compras_outros]))
-                    
-                    with st.spinner(f"A IA está analisando {len(descricoes_unicas)} estabelecimentos..."):
-                        prompt = f"""
-                        Atue como um classificador financeiro. Analise a lista de descrições de compras de cartão de crédito.
-                        Classifique CADA UMA em uma destas categorias permitidas: {', '.join(cats_existentes)}.
-                        Se nenhuma se encaixar, crie uma nova categoria curta (1 palavra).
-                        Retorne EXATAMENTE neste formato de tabela:
-                        Descrição | Categoria
+                db = SessionLocal()
+                compras_outros = db.query(Transaction).filter_by(category="Outros", type="EXPENSE").all()
+                if not compras_outros: st.info("Você não tem compras classificadas como 'Outros'!")
+                else:
+                    genai.configure(api_key=api_key_import)
+                    try:
+                        m_validos = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                        model = genai.GenerativeModel(next((m for m in m_validos if 'flash' in m), m_validos[0]))
                         
-                        Lista:
-                        {', '.join(descricoes_unicas)}
-                        """
+                        cats_existentes = list(set([r[0] for r in db.query(Transaction.category).distinct().all() if r[0] != "Outros"]))
+                        descricoes = list(set([c.description for c in compras_outros]))
                         
-                        resposta = model.generate_content(prompt)
-                        linhas = resposta.text.strip().split('\n')
-                        
-                        mapeamento_ia = {}
-                        for linha in linhas:
-                            if '|' in linha and 'Descrição' not in linha and '---' not in linha:
-                                partes = linha.split('|')
-                                if len(partes) >= 2:
-                                    desc_ia = partes[0].strip()
-                                    cat_ia = partes[1].strip()
-                                    mapeamento_ia[desc_ia] = cat_ia
-                        
-                        alteradas = 0
-                        for compra in compras_outros:
-                            cat_nova = mapeamento_ia.get(compra.description)
-                            if cat_nova:
-                                compra.category = cat_nova
-                                alteradas += 1
-                        
-                        db.commit()
-                        st.success(f"🪄 Mágica concluída! {alteradas} compras reclassificadas pela IA.")
-                        st.balloons()
-                        
-                except Exception as e:
-                    st.error(f"Erro na comunicação com a IA: {e}")
-            db.close()
+                        with st.spinner("Conectando aos neurônios do Google..."):
+                            prompt = f"Categorize estas compras: {', '.join(descricoes)}. Categorias permitidas: {', '.join(cats_existentes)}. Retorne tabela: Descrição | Categoria"
+                            linhas = model.generate_content(prompt).text.strip().split('\n')
+                            mapeamento_ia = {p[0].strip(): p[1].strip() for l in linhas if '|' in l and len(p := l.split('|')) >= 2 and '---' not in l}
+                            
+                            alt = sum([1 for c in compras_outros if (nova := mapeamento_ia.get(c.description)) and (setattr(c, 'category', nova) or True)])
+                            db.commit()
+                            st.success(f"Triagem concluída. {alt} itens realocados!")
+                    except Exception as e: st.error(f"Falha na IA: {e}")
+                db.close()
 
 # ==========================================
 # TELA 4: CONFIGURAÇÕES
 # ==========================================
 elif menu == "Configurações":
-    st.header("⚙️ Configurações de Categorização")
+    st.header("⚙️ Motor de Regras")
     db = SessionLocal()
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.subheader("Adicionar Nova Regra")
-        nova_palavra = st.text_input("Palavra-chave").lower().strip()
-        nova_categoria = st.text_input("Categoria").title().strip()
-        if st.button("Salvar Regra") and nova_palavra and nova_categoria:
-            if db.query(CategoryRule).filter_by(keyword=nova_palavra).first():
-                st.warning("Esta palavra-chave já existe.")
+        st.write("Crie regras automáticas para cruzamento de dados na importação.")
+        nova_palavra = st.text_input("Termo contido na fatura").lower().strip()
+        nova_categoria = st.text_input("Categoria Destino").title().strip()
+        if st.button("Injetar Regra", type="primary") and nova_palavra and nova_categoria:
+            if db.query(CategoryRule).filter_by(keyword=nova_palavra).first(): st.warning("Regra em conflito.")
             else:
                 db.add(CategoryRule(keyword=nova_palavra, category=nova_categoria))
                 db.commit()
-                st.success("Regra salva!")
+                st.success("Regra ativada.")
                 st.rerun()
-                
     with col2:
-        st.subheader("Regras Atuais")
         regras = pd.read_sql("SELECT id, keyword as 'Palavra Chave', category as 'Categoria' FROM category_rules", engine)
         if not regras.empty:
-            st.dataframe(regras, hide_index=True, use_container_width=True)
-            del_id = st.number_input("ID para excluir", min_value=0, step=1)
-            if st.button("Excluir Regra") and del_id > 0:
+            AgGrid(regras, fit_columns_on_grid_load=True, theme="alpine")
+            if st.button("Purgar Regra via ID") and (del_id := st.number_input("ID", min_value=0, step=1)) > 0:
                 db.query(CategoryRule).filter_by(id=del_id).delete()
                 db.commit()
                 st.rerun()
     db.close()
 
 # ==========================================
-# TELA 5: ASSISTENTE IA
+# TELA 5: ASSISTENTE IA (LOTTIE INTEGRADO)
 # ==========================================
 elif menu == "Assistente IA":
-    st.header("🤖 Assistente Financeiro IA (Google Gemini)")
-    if not HAS_AI: st.error("Falta a biblioteca google-generativeai")
+    st.header("🧠 Oráculo Financeiro")
+    if not HAS_AI: st.error("Módulo google-generativeai inoperante.")
     else:
-        api_key = st.text_input("Insira sua API Key do Google Gemini:", type="password")
-        if api_key:
-            genai.configure(api_key=api_key)
-            try:
-                modelos_validos = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                modelo_escolhido = st.selectbox("🧠 Selecione o modelo da IA:", modelos_validos)
-                model = genai.GenerativeModel(modelo_escolhido)
-                
-                df = pd.read_sql("SELECT date, description, amount, type, category FROM transactions", engine)
-                if df.empty: st.warning("Banco de dados vazio.")
-                else:
-                    resumo_por_categoria = df.groupby(['category', 'type'])['amount'].sum().to_dict()
-                    compras_recentes = df.sort_values(by='date', ascending=False).head(20).to_string(index=False)
-                    contexto_dados = textwrap.dedent(f"Totais: {resumo_por_categoria}\nÚltimas 20 transações:\n{compras_recentes}")
+        col1, col2 = st.columns([2, 1])
+        with col2:
+            # Robô animado escutando
+            lottie_robot = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_0xbu0vpt.json")
+            if lottie_robot: st_lottie(lottie_robot, height=250, key="robot")
+            
+        with col1:
+            api_key = st.text_input("Autenticação Google AI:", type="password")
+            if api_key:
+                genai.configure(api_key=api_key)
+                try:
+                    m_validos = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                    modelo = st.selectbox("Processador lógico:", m_validos)
+                    model = genai.GenerativeModel(modelo)
                     
-                    pergunta = st.chat_input("Pergunte algo aos seus dados...")
-                    if pergunta:
-                        with st.chat_message("user"): st.write(pergunta)
-                        with st.chat_message("assistant"):
-                            with st.spinner("Analisando..."):
-                                try:
-                                    st.write(model.generate_content(f"{contexto_dados}\n\nPergunta: {pergunta}").text)
-                                except Exception as e:
-                                    st.error(f"Erro: {e}")
-            except Exception as e:
-                st.error(f"Erro ao conectar: {e}")
+                    df = pd.read_sql("SELECT * FROM transactions", engine)
+                    if df.empty: st.warning("Sem contexto de dados para leitura.")
+                    else:
+                        contexto = f"Gastos: {df.groupby(['category', 'type'])['amount'].sum().to_dict()}\nÚltimas: {df.sort_values(by='date', ascending=False).head(20).to_string(index=False)}"
+                        if pergunta := st.chat_input("Pergunte sobre seus dados financeiros..."):
+                            st.chat_message("user").write(pergunta)
+                            with st.chat_message("assistant"):
+                                with st.spinner("Computando resposta baseada no histórico..."):
+                                    try: st.write(model.generate_content(f"Contexto: {contexto}\n\nPergunta: {pergunta}").text)
+                                    except Exception as e: st.error(f"Falha estrutural: {e}")
+                except Exception as e: st.error(f"Erro de conexão central: {e}")
