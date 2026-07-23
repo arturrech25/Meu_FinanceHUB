@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
 
 # Conecta ao seu banco de dados no Google Drive
-DB_PATH = 'financehub_v3.db'
+DB_PATH = 'financehub_v4.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
 from sqlalchemy import Column, Integer, String, Float, Date
 from sqlalchemy.orm import declarative_base
@@ -132,6 +132,9 @@ elif menu == "Importar Fatura":
                     desc = str(row.get('descrição', 'Desconhecido'))
                     amount_raw = row.get('valor (em r$)')
                     
+                    # 💡 AQUI: Pegamos a categoria oficial do banco C6!
+                    categoria_c6 = str(row.get('categoria', '')).strip()
+                    
                     if pd.isna(amount_raw) or amount_raw == '': 
                         continue
                     
@@ -146,13 +149,18 @@ elif menu == "Importar Fatura":
                     amount = float(val_str)
                     t_type = "EXPENSE" if amount > 0 else "INCOME"
                     
-                    # --- APLICA AS REGRAS NAS COMPRAS ---
-                    categoria_definida = "Outros"
-                    desc_lower = desc.lower()
-                    for palavra_chave, categoria_nome in regras.items():
-                        if palavra_chave in desc_lower:
-                            categoria_definida = categoria_nome
-                            break
+                    # --- SISTEMA DE CATEGORIZAÇÃO INTELIGENTE ---
+                    # 1. Tenta usar a categoria do C6 Bank
+                    if categoria_c6 and categoria_c6.lower() != 'nan' and categoria_c6 != '':
+                        categoria_definida = categoria_c6.title() # Deixa a primeira letra maiúscula
+                    else:
+                        # 2. Se o C6 não souber, usa nossas regras
+                        categoria_definida = "Outros"
+                        desc_lower = desc.lower()
+                        for palavra_chave, categoria_nome in regras.items():
+                            if palavra_chave in desc_lower:
+                                categoria_definida = categoria_nome
+                                break
                     
                     raw_str = f"{dt_obj.strftime('%Y-%m-%d')}_{desc}_{amount}".encode('utf-8')
                     tx_hash = hashlib.sha256(raw_str).hexdigest()
@@ -166,7 +174,7 @@ elif menu == "Importar Fatura":
                         description=desc, 
                         amount=abs(amount), 
                         type=t_type, 
-                        category=categoria_definida, # <--- AQUI A MÁGICA ACONTECE
+                        category=categoria_definida, 
                         hash_id=tx_hash
                     )
                     db.add(nova_compra)
