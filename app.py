@@ -139,7 +139,13 @@ if menu == "Dashboard":
                         gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
                         fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.4, title="🍩 Distribuição por Categoria")
                         fig2.update_traces(textposition='inside', textinfo='percent')
-                        fig2.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+                        
+                        # CORREÇÃO: Altura expandida e margens corrigidas para legendas grandes
+                        fig2.update_layout(
+                            height=500, 
+                            margin=dict(t=50, b=0, l=20, r=20),
+                            legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
+                        )
                         st.plotly_chart(fig2, use_container_width=True)
                 
                 # --- GRÁFICOS LINHA 2 ---
