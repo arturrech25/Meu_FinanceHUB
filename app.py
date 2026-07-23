@@ -43,6 +43,9 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Assiste
 # ==========================================
 # TELA 1: DASHBOARD
 # ==========================================
+# ==========================================
+# TELA 1: DASHBOARD
+# ==========================================
 if menu == "Dashboard":
     st.header("📊 Seu Dashboard Financeiro")
     
@@ -51,37 +54,89 @@ if menu == "Dashboard":
         if df.empty:
             st.warning("Seu banco de dados está vazio. Vá na aba 'Importar Fatura'.")
         else:
+            # Prepara as datas
             df['date'] = pd.to_datetime(df['date'])
             df['month_year'] = df['date'].dt.to_period('M').astype(str)
             
-            # Métricas no topo
-            total_gasto = df[df['type'] == 'EXPENSE']['amount'].sum()
-            total_entradas = df[df['type'] == 'INCOME']['amount'].sum()
+            # --- FILTROS LATERAIS ---
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("Filtros")
             
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Gasto (Histórico)", f"R$ {total_gasto:,.2f}")
-            col2.metric("Total Entradas (Histórico)", f"R$ {total_entradas:,.2f}")
-            col3.metric("Lançamentos Registrados", len(df))
+            meses_disponiveis = sorted(df['month_year'].unique(), reverse=True)
+            meses_selecionados = st.sidebar.multiselect("Selecione os Meses", meses_disponiveis, default=meses_disponiveis)
             
-            st.markdown("---")
+            categorias_disponiveis = sorted(df['category'].unique())
+            categorias_selecionadas = st.sidebar.multiselect("Selecione as Categorias", categorias_disponiveis, default=categorias_disponiveis)
             
-            # Gráficos
-            col_grafico1, col_grafico2 = st.columns(2)
+            # Aplica os filtros
+            df_filtrado = df[(df['month_year'].isin(meses_selecionados)) & (df['category'].isin(categorias_selecionadas))]
             
-            with col_grafico1:
-                gastos_mes = df[df['type'] == 'EXPENSE'].groupby('month_year')['amount'].sum().reset_index()
-                fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="Despesas Mensais")
-                st.plotly_chart(fig1, use_container_width=True)
+            if df_filtrado.empty:
+                st.info("Nenhum dado encontrado para os filtros selecionados.")
+            else:
+                # --- MÉTRICAS PRINCIPAIS (KPIs) ---
+                despesas = df_filtrado[df_filtrado['type'] == 'EXPENSE']
+                entradas = df_filtrado[df_filtrado['type'] == 'INCOME']
                 
-            with col_grafico2:
-                top_desc = df[df['type'] == 'EXPENSE'].groupby('category')['amount'].sum().nlargest(5).reset_index()
-                fig2 = px.pie(top_desc, values='amount', names='category', hole=0.5, title="Top 5 Categorias")
-                st.plotly_chart(fig2, use_container_width=True)
+                total_gasto = despesas['amount'].sum()
+                total_entradas = entradas['amount'].sum()
+                saldo = total_entradas - total_gasto
                 
-            st.subheader("Últimas Movimentações")
-            st.dataframe(df.sort_values('date', ascending=False).head(10), use_container_width=True)
+                maior_compra = despesas['amount'].max() if not despesas.empty else 0
+                nome_maior_compra = despesas.loc[despesas['amount'].idxmax()]['description'] if not despesas.empty else "-"
+                
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}")
+                col2.metric("Total Entradas", f"R$ {total_entradas:,.2f}")
+                col3.metric("Saldo do Período", f"R$ {saldo:,.2f}", delta=f"R$ {saldo:,.2f}")
+                col4.metric("Maior Compra", f"R$ {maior_compra:,.2f}", help=f"Estabelecimento: {nome_maior_compra}")
+                
+                st.markdown("---")
+                
+                # --- ÁREA DOS GRÁFICOS ---
+                # Linha 1: Gráficos de Mês e Categoria
+                col_grafico1, col_grafico2 = st.columns(2)
+                
+                with col_grafico1:
+                    gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
+                    fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Despesas por Mês", text_auto='.2s', color_discrete_sequence=['#EF4444'])
+                    fig1.update_traces(textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
+                    st.plotly_chart(fig1, use_container_width=True)
+                    
+                with col_grafico2:
+                    gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
+                    fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.5, title="🍩 Divisão por Categoria")
+                    fig2.update_traces(textposition='inside', textinfo='percent')
+                    st.plotly_chart(fig2, use_container_width=True)
+                
+                # Linha 2: Top Estabelecimentos e Evolução Diária
+                col_grafico3, col_grafico4 = st.columns(2)
+                
+                with col_grafico3:
+                    top_estabelecimentos = despesas.groupby('description')['amount'].sum().nlargest(10).reset_index()
+                    fig3 = px.bar(top_estabelecimentos, x='amount', y='description', orientation='h', 
+                                  title="🏆 Top 10 Estabelecimentos", color_discrete_sequence=['#3B82F6'])
+                    fig3.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig3, use_container_width=True)
+                    
+                with col_grafico4:
+                    gastos_diarios = despesas.groupby('date')['amount'].sum().reset_index()
+                    fig4 = px.line(gastos_diarios, x='date', y='amount', title="📈 Evolução Diária de Gastos", markers=True, color_discrete_sequence=['#10B981'])
+                    st.plotly_chart(fig4, use_container_width=True)
+                
+                # --- TABELA INTERATIVA ---
+                st.markdown("---")
+                st.subheader("📋 Histórico Detalhado")
+                
+                # Prepara a tabela para ficar mais bonita
+                df_mostrar = df_filtrado[['date', 'description', 'category', 'amount', 'type']].copy()
+                df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
+                df_mostrar.columns = ['Data', 'Descrição', 'Categoria', 'Valor (R$)', 'Tipo']
+                
+                st.dataframe(df_mostrar.sort_values('Data', ascending=False), use_container_width=True, hide_index=True)
             
     except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")
         st.error(f"Erro ao carregar dados: {e}")
 
 # ==========================================
