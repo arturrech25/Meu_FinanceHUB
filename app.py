@@ -310,15 +310,44 @@ elif menu == "Metas & Custos Fixos":
                         st.markdown(html_bar, unsafe_allow_html=True)
 
         with tab2:
-            st.subheader("Seus Custos Invisíveis")
-            assinaturas = df.groupby('description').agg(meses=('month_year', 'nunique'), valor=('amount', 'mean')).reset_index()
-            assinaturas = assinaturas[assinaturas['meses'] >= 2].sort_values('valor', ascending=False)
+            st.subheader("Radar de Assinaturas e Serviços")
+            st.write("Buscando pelas assinaturas mais comuns do Brasil no seu histórico...")
             
-            if assinaturas.empty: st.info("Nenhuma recorrência identificada.")
+            # Lista de palavras-chave das 50 assinaturas mais comuns
+            assinaturas_comuns = [
+                'netflix', 'spotify', 'amazon prime', 'prime video', 'globoplay', 'disney', 'star+', 'max', 'hbo',
+                'apple tv', 'paramount', 'crunchyroll', 'youtube premium', 'youtube music', 'apple music', 'deezer', 'amazon music',
+                'google one', 'icloud', 'microsoft', 'office 365', 'dropbox', 'adobe', 'canva', 'chatgpt', 'openai', 'notion', 'zoom',
+                'smart fit', 'bluefit', 'gympass', 'wellhub', 'totalpass',
+                'claro', 'vivo', 'tim', 'oi',
+                'ifood', 'rappi', 'ze delivery',
+                'xbox', 'playstation', 'nintendo',
+                'sem parar', 'veloe', 'conectcar',
+                'mercado livre', 'meli+', 'wine', 'tag livros', 'folha', 'estadao', 'o globo',
+                'tinder', 'duolingo', 'babbel'
+            ]
+            
+            # Cria um filtro usando Expressões Regulares (Regex) para achar qualquer uma das palavras
+            padrao = '|'.join(assinaturas_comuns)
+            
+            # Filtra o DataFrame para pegar apenas compras que contenham essas palavras-chave
+            df_assinaturas = df[df['description'].str.lower().str.contains(padrao, na=False, regex=True)]
+            
+            # Agrupa os dados filtrados
+            assinaturas = df_assinaturas.groupby('description').agg(
+                meses_cobrados=('month_year', 'nunique'), 
+                valor_medio=('amount', 'mean')
+            ).reset_index()
+            
+            # Exige que tenha sido cobrado em pelo menos 2 meses diferentes para ser considerado recorrência
+            assinaturas = assinaturas[assinaturas['meses_cobrados'] >= 2].sort_values('valor_medio', ascending=False)
+            
+            if assinaturas.empty: 
+                st.info("Nenhuma assinatura conhecida foi identificada com recorrência.")
             else:
-                render_metric_card("Seu Custo de Vida Fixo Base", f"R$ {assinaturas['valor'].sum():,.2f}")
+                render_metric_card("Seu Custo Fixo de Assinaturas", f"R$ {assinaturas['valor_medio'].sum():,.2f}")
                 st.write("")
-                assinaturas.columns = ['Serviço / Estabelecimento', 'Meses Cobrados', 'Média de Valor (R$)']
+                assinaturas.columns = ['Serviço / Assinatura', 'Meses Cobrados', 'Média de Valor (R$)']
                 
                 # AgGrid para visualização bonita
                 AgGrid(assinaturas, fit_columns_on_grid_load=True, theme="alpine")
