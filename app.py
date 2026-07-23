@@ -93,7 +93,6 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Metas & Custos Fixos", "Im
 # TELA 1: DASHBOARD
 # ==========================================
 if menu == "Dashboard":
-    
     try:
         df = pd.read_sql("SELECT * FROM transactions", engine)
         if df.empty:
@@ -120,7 +119,7 @@ if menu == "Dashboard":
                 total_gasto = despesas['amount'].sum()
                 
                 # --- MÉTRICA ÚNICA (Destaque principal) ---
-                col_metric, _ = st.columns([1, 3]) # Deixa a métrica mais contida
+                col_metric, _ = st.columns([1, 3]) 
                 with col_metric:
                     st.metric("Balance (Total Gasto)", f"R$ {total_gasto:,.2f}")
                 
@@ -133,7 +132,6 @@ if menu == "Dashboard":
                         gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
                         fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução de Despesas por Mês", text_auto='.2s')
                         
-                        # Estilo Neon/Dark
                         fig1.update_traces(marker_color='#FF8A00', textfont_size=12, textangle=0, textposition="outside", cliponaxis=False)
                         fig1.update_layout(
                             plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
@@ -154,16 +152,26 @@ if menu == "Dashboard":
                         )
                         st.plotly_chart(fig2, use_container_width=True)
                 
-                # --- GRÁFICOS LINHA 2 ---
+                # --- GRÁFICOS LINHA 2 (ATUALIZADA) ---
                 col_grafico3, col_grafico4 = st.columns(2)
+                
                 with col_grafico3:
                     with st.container(border=True):
-                        gastos_dia = despesas.groupby('date')['amount'].sum().reset_index()
-                        fig3 = px.line(gastos_dia, x='date', y='amount', title="🗓️ Ritmo de Gastos Diário", markers=True)
-                        fig3.update_traces(line_color='#FF8A00', fill='tozeroy', fillcolor='rgba(255, 138, 0, 0.1)', marker=dict(size=6, color='#FFFFFF'))
+                        # Gasto por Dia da Semana
+                        df_dias = despesas.copy()
+                        df_dias['dia_semana'] = df_dias['date'].dt.day_name().map({
+                            'Monday': 'Segunda', 'Tuesday': 'Terça', 'Wednesday': 'Quarta',
+                            'Thursday': 'Quinta', 'Friday': 'Sexta', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+                        })
+                        ordem_dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+                        gastos_semana = df_dias.groupby('dia_semana')['amount'].sum().reindex(ordem_dias).reset_index().fillna(0)
+                        
+                        fig3 = px.bar(gastos_semana, x='dia_semana', y='amount', title="📅 Hábitos por Dia da Semana", text_auto='.2s')
+                        fig3.update_traces(marker_color='#FF8A00', marker_line_width=0, opacity=0.9, textfont_size=12, textposition="outside", cliponaxis=False)
                         fig3.update_layout(
                             plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                            xaxis=dict(showgrid=False, zeroline=False, visible=False),
+                            xaxis_title=None, yaxis_title=None,
+                            xaxis=dict(showgrid=False, zeroline=False),
                             yaxis=dict(showgrid=False, zeroline=False, visible=False),
                             margin=dict(l=0, r=0, t=50, b=0)
                         )
@@ -171,13 +179,16 @@ if menu == "Dashboard":
                         
                 with col_grafico4:
                     with st.container(border=True):
-                        top5 = despesas.nlargest(5, 'amount')[['description', 'amount']].sort_values(by='amount', ascending=True)
-                        fig4 = px.bar(top5, x='amount', y='description', orientation='h', title="🏆 Top 5 Maiores Despesas Individuais", text_auto='.2s')
+                        # Top 5 Categorias (Agregado)
+                        top5_cat = despesas.groupby('category')['amount'].sum().reset_index().nlargest(5, 'amount').sort_values(by='amount', ascending=True)
+                        
+                        fig4 = px.bar(top5_cat, x='amount', y='category', orientation='h', title="🏆 Top 5 Maiores Categorias", text_auto='.2s')
                         fig4.update_traces(marker_color='#FF8A00', textfont_size=12, textposition="outside", cliponaxis=False)
                         fig4.update_layout(
                             plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
                             yaxis_title=None, xaxis_title=None,
-                            xaxis=dict(showgrid=False, zeroline=False, visible=False)
+                            xaxis=dict(showgrid=False, zeroline=False, visible=False),
+                            margin=dict(l=0, r=0, t=50, b=0)
                         )
                         st.plotly_chart(fig4, use_container_width=True)
                 
