@@ -140,8 +140,8 @@ seed_rules()
 # ==========================================
 # NAVEGAÇÃO
 # ==========================================
-st.sidebar.markdown("<h1 style='text-align: center; color: #FF8A00; font-weight: 900; margin-bottom: 0;'>💳 Rech's Finance</h1>", unsafe_allow_html=True)
-st.sidebar.markdown("<p style='text-align: center; color: #888; font-size: 12px; margin-bottom: 30px;'>FinanceHub Dashboard</p>", unsafe_allow_html=True)
+st.sidebar.markdown("<h1 style='text-align: center; color: #FF8A00; font-weight: 900; margin-bottom: 0;'>💳 Wallet</h1>", unsafe_allow_html=True)
+st.sidebar.markdown("<p style='text-align: center; color: #888; font-size: 12px; margin-bottom: 30px;'>FinanceHub Premium</p>", unsafe_allow_html=True)
 
 menu = st.sidebar.radio("Menu Principal", [
     "Dashboard", 
@@ -154,7 +154,7 @@ menu = st.sidebar.radio("Menu Principal", [
 ])
 
 # ==========================================
-# TELA 1: DASHBOARD (COM FORECAST E INSIGHTS)
+# TELA 1: DASHBOARD
 # ==========================================
 if menu == "Dashboard":
     try:
@@ -204,7 +204,47 @@ if menu == "Dashboard":
                 
                 st.write("") 
                 
-                # --- INSIGHTS AUTOMÁTICOS & ALERTAS DE ANOMALIAS ---
+                # --- GRÁFICOS (LINHA 1) ---
+                col_g1, col_g2 = st.columns(2)
+                with col_g1:
+                    with st.container(border=True):
+                        gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
+                        fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução Mensal", text_auto='.2s')
+                        fig1.update_traces(marker_color='#FF8A00', textfont_size=12, textposition="outside", cliponaxis=False)
+                        fig1.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', xaxis_title=None, yaxis_title=None, xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, visible=False))
+                        st.plotly_chart(fig1, use_container_width=True)
+                    
+                with col_g2:
+                    with st.container(border=True):
+                        gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
+                        fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.7, title="🍩 Categorias")
+                        fig2.update_traces(textposition='inside', textinfo='percent', marker=dict(line=dict(color='#0E1117', width=3)))
+                        fig2.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(t=40, b=0, l=0, r=0), legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
+                        st.plotly_chart(fig2, use_container_width=True)
+                
+                # --- GRÁFICOS (LINHA 2) ---
+                col_g3, col_g4 = st.columns(2)
+                with col_g3:
+                    with st.container(border=True):
+                        df_dias = despesas.copy()
+                        df_dias['dia_semana'] = df_dias['date'].dt.day_name().map({'Monday':'Seg', 'Tuesday':'Ter', 'Wednesday':'Qua', 'Thursday':'Qui', 'Friday':'Sex', 'Saturday':'Sáb', 'Sunday':'Dom'})
+                        gastos_semana = df_dias.groupby('dia_semana')['amount'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']).reset_index().fillna(0)
+                        fig3 = px.bar(gastos_semana, x='dia_semana', y='amount', title="📅 Hábitos por Dia", text_auto='.2s')
+                        fig3.update_traces(marker_color='#FF8A00', opacity=0.9, textposition="outside", cliponaxis=False)
+                        fig3.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', xaxis_title=None, yaxis_title=None, xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, visible=False))
+                        st.plotly_chart(fig3, use_container_width=True)
+                        
+                with col_g4:
+                    with st.container(border=True):
+                        top5_cat = despesas.groupby('category')['amount'].sum().reset_index().nlargest(5, 'amount').sort_values(by='amount', ascending=True)
+                        fig4 = px.bar(top5_cat, x='amount', y='category', orientation='h', title="🏆 Top 5 Ralos", text_auto='.2s')
+                        fig4.update_traces(marker_color='#FF8A00', textposition="outside", cliponaxis=False)
+                        fig4.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', yaxis_title=None, xaxis_title=None, xaxis=dict(showgrid=False, visible=False))
+                        st.plotly_chart(fig4, use_container_width=True)
+                
+                st.write("")
+                
+                # --- INSIGHTS AUTOMÁTICOS & ALERTAS DE ANOMALIAS (MOVIDO PARA CÁ) ---
                 if len(meses_disponiveis) >= 2:
                     mes_atual_str = meses_disponiveis[0]
                     mes_ant_str = meses_disponiveis[1]
@@ -233,44 +273,9 @@ if menu == "Dashboard":
                                 st.warning(a)
                             for e in elogios[:2]:
                                 st.success(e)
-                
-                # --- GRÁFICOS ---
-                col_g1, col_g2 = st.columns(2)
-                with col_g1:
-                    with st.container(border=True):
-                        gastos_mes = despesas.groupby('month_year')['amount'].sum().reset_index()
-                        fig1 = px.bar(gastos_mes, x='month_year', y='amount', title="📉 Evolução Mensal", text_auto='.2s')
-                        fig1.update_traces(marker_color='#FF8A00', textfont_size=12, textposition="outside", cliponaxis=False)
-                        fig1.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', xaxis_title=None, yaxis_title=None, xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, visible=False))
-                        st.plotly_chart(fig1, use_container_width=True)
-                    
-                with col_g2:
-                    with st.container(border=True):
-                        gastos_cat = despesas.groupby('category')['amount'].sum().reset_index()
-                        fig2 = px.pie(gastos_cat, values='amount', names='category', hole=0.7, title="🍩 Categorias")
-                        fig2.update_traces(textposition='inside', textinfo='percent', marker=dict(line=dict(color='#0E1117', width=3)))
-                        fig2.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(t=40, b=0, l=0, r=0), legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5))
-                        st.plotly_chart(fig2, use_container_width=True)
-                
-                col_g3, col_g4 = st.columns(2)
-                with col_g3:
-                    with st.container(border=True):
-                        df_dias = despesas.copy()
-                        df_dias['dia_semana'] = df_dias['date'].dt.day_name().map({'Monday':'Seg', 'Tuesday':'Ter', 'Wednesday':'Qua', 'Thursday':'Qui', 'Friday':'Sex', 'Saturday':'Sáb', 'Sunday':'Dom'})
-                        gastos_semana = df_dias.groupby('dia_semana')['amount'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']).reset_index().fillna(0)
-                        fig3 = px.bar(gastos_semana, x='dia_semana', y='amount', title="📅 Hábitos por Dia", text_auto='.2s')
-                        fig3.update_traces(marker_color='#FF8A00', opacity=0.9, textposition="outside", cliponaxis=False)
-                        fig3.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', xaxis_title=None, yaxis_title=None, xaxis=dict(showgrid=False), yaxis=dict(showgrid=False, visible=False))
-                        st.plotly_chart(fig3, use_container_width=True)
-                        
-                with col_g4:
-                    with st.container(border=True):
-                        top5_cat = despesas.groupby('category')['amount'].sum().reset_index().nlargest(5, 'amount').sort_values(by='amount', ascending=True)
-                        fig4 = px.bar(top5_cat, x='amount', y='category', orientation='h', title="🏆 Top 5 Ralos", text_auto='.2s')
-                        fig4.update_traces(marker_color='#FF8A00', textposition="outside", cliponaxis=False)
-                        fig4.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', yaxis_title=None, xaxis_title=None, xaxis=dict(showgrid=False, visible=False))
-                        st.plotly_chart(fig4, use_container_width=True)
-                
+
+                st.write("")
+
                 # --- AG-GRID: TABELA EDITÁVEL ---
                 with st.expander("🛠️ Modo Planilha: Editar Histórico e Exportar", expanded=False):
                     st.markdown("<p style='color: #FF8A00; font-size: 14px;'>Dê duplo-clique na coluna 'Categoria' para alterar os dados. Depois clique em Salvar.</p>", unsafe_allow_html=True)
@@ -515,7 +520,6 @@ elif menu == "Simulador & Reserva":
     st.header("🛡️ Simulador de Reserva de Emergência & Investimentos")
     df = pd.read_sql("SELECT * FROM transactions WHERE type='EXPENSE'", engine)
     
-    # Média de custo mensal do usuário
     if not df.empty:
         df['month_year'] = pd.to_datetime(df['date']).dt.to_period('M').astype(str)
         media_custo_mensal = df.groupby('month_year')['amount'].sum().mean()
@@ -551,7 +555,6 @@ elif menu == "Simulador & Reserva":
         st.write("")
         st.subheader("📈 Projeção Patrimonial com Juros Compostos")
         
-        # Cálculo de Juros Compostos Mês a Mês (36 meses)
         i_mensal = ((1 + (taxa_cdi / 100)) ** (1 / 12)) - 1
         
         meses_proj = 36
@@ -578,7 +581,6 @@ elif menu == "Simulador & Reserva":
             fig_proj.add_trace(go.Scatter(x=df_proj['Mês'], y=df_proj['Saldo Total'], mode='lines', name='Saldo Total (com Juros)', line=dict(color='#FF8A00', width=3)))
             fig_proj.add_trace(go.Scatter(x=df_proj['Mês'], y=df_proj['Total Aportado'], mode='lines', name='Total do Seu Bolso', line=dict(color='#CBD5E0', dash='dash')))
             
-            # Linha da Meta
             fig_proj.add_hline(y=meta_reserva, line_dash="dot", line_color="#48BB78", annotation_text="Meta da Reserva", annotation_position="top left")
             
             fig_proj.update_layout(
