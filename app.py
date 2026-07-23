@@ -344,35 +344,32 @@ elif menu == "Assistente IA":
             genai.configure(api_key=api_key)
             
             try:
-                # --- SISTEMA DE BUSCA AUTOMÁTICA DE MODELO ---
+                # --- SISTEMA DEFINITIVO: O USUÁRIO ESCOLHE O MODELO ---
+                # Busca todos os modelos e limpa o texto 'models/'
+                modelos_brutos = genai.list_models()
                 modelos_validos = [
-                    m.name for m in genai.list_models() 
+                    m.name.replace('models/', '') for m in modelos_brutos 
                     if 'generateContent' in m.supported_generation_methods
                 ]
                 
                 if not modelos_validos:
                     st.error("Sua chave de API não tem acesso a nenhum modelo de geração de texto no momento.")
                 else:
-                    # Tenta achar um modelo "flash" (rápido) ou "pro" (inteligente) na lista
-                    nome_modelo = modelos_validos[0] # Pega o primeiro por padrão
-                    for m in modelos_validos:
-                        if 'flash' in m:
-                            nome_modelo = m
-                            break
-                        elif 'pro' in m and 'vision' not in m:
-                            nome_modelo = m
+                    st.markdown("---")
+                    # Caixa de seleção para você testar os modelos livremente
+                    modelo_escolhido = st.selectbox(
+                        "🧠 Selecione o modelo da IA (Se um der erro '404', basta escolher outro da lista):", 
+                        modelos_validos
+                    )
                     
-                    # Limpa o prefixo 'models/' que a API retorna
-                    nome_modelo = nome_modelo.replace('models/', '')
-                    
-                    model = genai.GenerativeModel(nome_modelo)
+                    model = genai.GenerativeModel(modelo_escolhido)
                     
                     df = pd.read_sql("SELECT date, description, amount, type, category FROM transactions", engine)
                     
                     if df.empty:
                         st.warning("Seu banco de dados está vazio. Importe transações primeiro.")
                     else:
-                        st.success(f"✅ IA conectada com sucesso usando o modelo: {nome_modelo}")
+                        st.success(f"✅ IA conectada e pronta para usar o modelo: {modelo_escolhido}")
                         
                         resumo_por_categoria = df.groupby(['category', 'type'])['amount'].sum().to_dict()
                         compras_recentes = df.sort_values(by='date', ascending=False).head(20).to_string(index=False)
