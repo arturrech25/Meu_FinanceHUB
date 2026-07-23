@@ -72,38 +72,29 @@ menu = st.sidebar.radio("Navegação", ["Dashboard", "Importar Fatura", "Configu
 # ==========================================
 # TELA 1: DASHBOARD
 # ==========================================
-if menu == "Dashboard":
-    st.header("📊 Seu Dashboard Financeiro")
-    
-    try:
-        df = pd.read_sql("SELECT * FROM transactions", engine)
-        if df.empty:
-            st.warning("Seu banco de dados está vazio. Vá na aba 'Importar Fatura'.")
-        else:
-            df['date'] = pd.to_datetime(df['date'])
-            df['month_year'] = df['date'].dt.to_period('M').astype(str)
-            
-            # Filtros Laterais
+# --- FILTROS LATERAIS ---
             st.sidebar.markdown("---")
             st.sidebar.subheader("Filtros")
+            
             meses_disponiveis = sorted(df['month_year'].unique(), reverse=True)
-            mes_selecionado = st.sidebar.selectbox("Selecione o Mês Base", meses_disponiveis)
+            
+            # MUDANÇA: Troquei selectbox por multiselect
+            meses_selecionados = st.sidebar.multiselect(
+                "Selecione os Meses", 
+                meses_disponiveis, 
+                default=[meses_disponiveis[0]] # Seleciona o mês mais recente por padrão
+            )
             
             categorias_disponiveis = sorted(df['category'].unique())
             categorias_selecionadas = st.sidebar.multiselect("Filtrar Categorias", categorias_disponiveis, default=categorias_disponiveis)
             
-            df_filtrado = df[(df['month_year'] == mes_selecionado) & (df['category'].isin(categorias_selecionadas))]
+            # MUDANÇA: Agora o filtro usa .isin() para suportar vários meses
+            df_filtrado = df[(df['month_year'].isin(meses_selecionados)) & (df['category'].isin(categorias_selecionadas))]
             
             if df_filtrado.empty:
                 st.info("Nenhum dado encontrado para os filtros selecionados.")
             else:
-                # Melhoria 2: Cálculo de Deltas (Mês Atual vs Mês Anterior)
-                mes_atual_idx = meses_disponiveis.index(mes_selecionado)
-                df_mes_anterior = pd.DataFrame()
-                if mes_atual_idx + 1 < len(meses_disponiveis):
-                    mes_anterior = meses_disponiveis[mes_atual_idx + 1]
-                    df_mes_anterior = df[df['month_year'] == mes_anterior]
-
+                # --- MÉTRICAS ---
                 despesas = df_filtrado[df_filtrado['type'] == 'EXPENSE']
                 entradas = df_filtrado[df_filtrado['type'] == 'INCOME']
                 
@@ -112,13 +103,8 @@ if menu == "Dashboard":
                 saldo = total_entradas - total_gasto
                 maior_compra = despesas['amount'].max() if not despesas.empty else 0
                 
-                # Deltas
-                gasto_anterior = df_mes_anterior[df_mes_anterior['type'] == 'EXPENSE']['amount'].sum() if not df_mes_anterior.empty else 0
-                delta_gasto = ((total_gasto - gasto_anterior) / gasto_anterior * 100) if gasto_anterior > 0 else 0
-                delta_str = f"{delta_gasto:.1f}% vs mês anterior" if gasto_anterior > 0 else "Sem dados passados"
-
                 col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}", delta=delta_str, delta_color="inverse")
+                col1.metric("Total Gasto", f"R$ {total_gasto:,.2f}")
                 col2.metric("Maior Compra", f"R$ {maior_compra:,.2f}")
                 
                 st.markdown("---")
