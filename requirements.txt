@@ -3,3 +3,4 @@ pandas
 plotly
 SQLAlchemy
 google-generativeai
+openpyxl
