@@ -105,7 +105,6 @@ class Budget(Base):
     category = Column(String, unique=True, nullable=False)
     limit_amount = Column(Float, nullable=False)
 
-# Tabela para gerenciar as Assinaturas Conhecidas
 class SubscriptionRule(Base):
     __tablename__ = 'subscription_rules'
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -181,13 +180,11 @@ if menu == "Dashboard":
                 despesas = df_filtrado[df_filtrado['type'] == 'EXPENSE']
                 total_gasto = despesas['amount'].sum()
                 
-                # --- MÉTRICA COM HTML/CSS CUSTOMIZADO ---
                 col_metric, _ = st.columns([1, 2]) 
                 with col_metric:
                     render_metric_card("Balance Total (Gastos)", f"R$ {total_gasto:,.2f}", f"Analisando {len(meses_selecionados)} mês(es)")
                 st.write("") 
                 
-                # --- GRÁFICOS ---
                 col_g1, col_g2 = st.columns(2)
                 with col_g1:
                     with st.container(border=True):
@@ -219,12 +216,11 @@ if menu == "Dashboard":
                 with col_g4:
                     with st.container(border=True):
                         top5_cat = despesas.groupby('category')['amount'].sum().reset_index().nlargest(5, 'amount').sort_values(by='amount', ascending=True)
-                        fig4 = px.bar(top5_cat, x='amount', y='category', orientation='h', title="🏆 Top 5 Ralôs", text_auto='.2s')
+                        fig4 = px.bar(top5_cat, x='amount', y='category', orientation='h', title="🏆 Top 5 Ralos", text_auto='.2s')
                         fig4.update_traces(marker_color='#FF8A00', textposition="outside", cliponaxis=False)
                         fig4.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', yaxis_title=None, xaxis_title=None, xaxis=dict(showgrid=False, visible=False))
                         st.plotly_chart(fig4, use_container_width=True)
                 
-                # --- AG-GRID: TABELA DE ALTA PERFORMANCE ---
                 with st.expander("🛠️ Modo Planilha: Editar Histórico e Exportar", expanded=False):
                     st.markdown("<p style='color: #FF8A00; font-size: 14px;'>Dê um duplo clique na coluna 'Categoria' para alterar os dados. Depois clique em Salvar.</p>", unsafe_allow_html=True)
                     df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
@@ -331,14 +327,13 @@ elif menu == "Metas & Custos Fixos":
         with tab2:
             st.subheader("Radar de Assinaturas e Serviços")
             
-            # Puxa a lista de assinaturas permitidas do Banco de Dados
             regras_sub = db.query(SubscriptionRule).all()
             assinaturas_comuns = [r.keyword.lower() for r in regras_sub]
             
             if not assinaturas_comuns:
                 st.warning("Sua lista de assinaturas conhecidas está vazia. Adicione termos abaixo.")
             else:
-                # O \b garante que ele só encontre palavras inteiras, ignorando pedaços como 'oi' em 'goimage'
+                # O \b impede falsos positivos como encontrar 'oi' em 'goimage'
                 padrao = r'\b(' + '|'.join(assinaturas_comuns) + r')\b'
                 df_assinaturas = df[df['description'].str.lower().str.contains(padrao, na=False, regex=True)]
                 
@@ -364,8 +359,8 @@ elif menu == "Metas & Custos Fixos":
                 
                 with col_add:
                     st.write("**Adicionar Nova Assinatura**")
-                    nova_sub = st.text_input("Nome/Termo do serviço (ex: strava, nintendo):").lower().strip()
-                    if st.button("Adicionar à Lista", type="primary") and nova_sub:
+                    nova_sub = st.text_input("Nome/Termo do serviço (ex: strava, nintendo):", key="input_add_sub").lower().strip()
+                    if st.button("Adicionar à Lista", type="primary", key="btn_add_sub") and nova_sub:
                         if db.query(SubscriptionRule).filter_by(keyword=nova_sub).first():
                             st.warning("Esta assinatura já está na lista.")
                         else:
@@ -379,20 +374,9 @@ elif menu == "Metas & Custos Fixos":
                     df_regras_sub = pd.read_sql("SELECT id, keyword as 'Assinatura' FROM subscription_rules ORDER BY keyword", engine)
                     st.dataframe(df_regras_sub, use_container_width=True, hide_index=True, height=150)
                     
-                    sub_id_del = st.number_input("ID do item para excluir da lista:", min_value=0, step=1)
-                    if st.button("Excluir Assinatura") and sub_id_del > 0:
-                        db.query(SubscriptionRule).filter_by(id=sub_id_del).delete()
-                        db.commit()
-                        st.success("Item removido da lista!")
-                        st.rerun()
-                            
-                with col_del:
-                    st.write("**Remover Assinatura da Lista**")
-                    df_regras_sub = pd.read_sql("SELECT id, keyword as 'Assinatura' FROM subscription_rules ORDER BY keyword", engine)
-                    st.dataframe(df_regras_sub, use_container_width=True, hide_index=True, height=150)
-                    
-                    sub_id_del = st.number_input("ID do item para excluir da lista:", min_value=0, step=1)
-                    if st.button("Excluir Assinatura") and sub_id_del > 0:
+                    # ADICIONADA A KEY 'num_del_sub' AQUI PARA MATAR O ERRO DE ID DUPLICADO
+                    sub_id_del = st.number_input("ID do item para excluir da lista:", min_value=0, step=1, key="num_del_sub")
+                    if st.button("Excluir Assinatura", key="btn_del_sub") and sub_id_del > 0:
                         db.query(SubscriptionRule).filter_by(id=sub_id_del).delete()
                         db.commit()
                         st.success("Item removido da lista!")
@@ -495,9 +479,9 @@ elif menu == "Configurações":
     col1, col2 = st.columns([1, 2])
     with col1:
         st.write("Crie regras automáticas para cruzamento de dados na importação.")
-        nova_palavra = st.text_input("Termo contido na fatura").lower().strip()
-        nova_categoria = st.text_input("Categoria Destino").title().strip()
-        if st.button("Injetar Regra", type="primary") and nova_palavra and nova_categoria:
+        nova_palavra = st.text_input("Termo contido na fatura", key="input_nova_regra").lower().strip()
+        nova_categoria = st.text_input("Categoria Destino", key="input_nova_cat").title().strip()
+        if st.button("Injetar Regra", type="primary", key="btn_add_regra") and nova_palavra and nova_categoria:
             if db.query(CategoryRule).filter_by(keyword=nova_palavra).first(): st.warning("Regra em conflito.")
             else:
                 db.add(CategoryRule(keyword=nova_palavra, category=nova_categoria))
@@ -508,7 +492,8 @@ elif menu == "Configurações":
         regras = pd.read_sql("SELECT id, keyword as 'Palavra Chave', category as 'Categoria' FROM category_rules", engine)
         if not regras.empty:
             AgGrid(regras, fit_columns_on_grid_load=True, theme="alpine")
-            if st.button("Purgar Regra via ID") and (del_id := st.number_input("ID", min_value=0, step=1)) > 0:
+            # ADICIONADA A KEY 'num_del_regra' AQUI
+            if st.button("Purgar Regra via ID", key="btn_del_regra") and (del_id := st.number_input("ID para excluir da lista:", min_value=0, step=1, key="num_del_regra")) > 0:
                 db.query(CategoryRule).filter_by(id=del_id).delete()
                 db.commit()
                 st.rerun()
@@ -527,12 +512,12 @@ elif menu == "Assistente IA":
             if lottie_robot: st_lottie(lottie_robot, height=250, key="robot")
             
         with col1:
-            api_key = st.text_input("Autenticação Google AI:", type="password")
+            api_key = st.text_input("Autenticação Google AI:", type="password", key="api_chat")
             if api_key:
                 genai.configure(api_key=api_key)
                 try:
                     m_validos = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                    modelo = st.selectbox("Processador lógico:", m_validos)
+                    modelo = st.selectbox("Processador lógico:", m_validos, key="select_model")
                     model = genai.GenerativeModel(modelo)
                     
                     df = pd.read_sql("SELECT * FROM transactions", engine)
