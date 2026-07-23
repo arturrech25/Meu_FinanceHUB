@@ -10,6 +10,25 @@ st.set_page_config(page_title="FinanceHub", page_icon="💸", layout="wide")
 # Conecta ao seu banco de dados no Google Drive
 DB_PATH = 'financehub.db'
 engine = create_engine(f'sqlite:///{DB_PATH}')
+from sqlalchemy import Column, Integer, String, Float, Date
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+# Planta baixa da nossa tabela
+class Transaction(Base):
+    __tablename__ = 'transactions'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False)
+    description = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    type = Column(String, nullable=False)
+    category = Column(String, default="Outros")
+    hash_id = Column(String, unique=True, nullable=False)
+
+# Essa é a linha mágica que constrói a tabela se ela não existir
+Base.metadata.create_all(engine)
 
 # Título do App
 st.title("💸 FinanceHub - Gestão Pessoal")
