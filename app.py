@@ -1,15 +1,16 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date
 from sqlalchemy.orm import declarative_base, sessionmaker
 import hashlib
 from datetime import datetime
+import calendar
 import textwrap
 import io
 import requests
 
-# Importações Avançadas (AgGrid e Lottie)
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_lottie import st_lottie
 
@@ -26,18 +27,15 @@ st.set_page_config(page_title="FinanceHub Premium", page_icon="💳", layout="wi
 
 st.markdown("""
 <style>
-    /* Esconde cabeçalho padrão e rodape */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Customização da Barra de Rolagem (Estilo App Nativo) */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0E1117; }
     ::-webkit-scrollbar-thumb { background: #2A2D35; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #FF8A00; }
     
-    /* Botões Glow (Primários) */
     .stButton > button[kind="primary"] {
         background: linear-gradient(90deg, #FF8A00 0%, #E57A00 100%);
         color: white;
@@ -52,7 +50,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Função para carregar animações Lottie da Web
 @st.cache_data
 def load_lottieurl(url: str):
     r = requests.get(url)
@@ -60,18 +57,15 @@ def load_lottieurl(url: str):
         return None
     return r.json()
 
-# Função para desenhar Cartões VIP HTML/CSS
-def render_metric_card(title, value, subtitle=""):
+def render_metric_card(title, value, subtitle="", border_color="#FF8A00"):
     html = f"""
     <div style='background: linear-gradient(135deg, #1E2129 0%, #14171F 100%);
-                border: 1px solid #2A2D35; border-radius: 15px; padding: 25px;
-                box-shadow: 0 8px 20px rgba(0,0,0,0.4); border-left: 4px solid #FF8A00;
-                font-family: sans-serif; transition: transform 0.3s ease, border-color 0.3s ease;'
-                onmouseover='this.style.transform="translateY(-5px)"; this.style.borderColor="#FF8A00";'
-                onmouseout='this.style.transform="translateY(0)"; this.style.borderColor="#2A2D35";'>
-        <div style='color: #A0AEC0; font-size: 13px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;'>{title}</div>
-        <div style='color: #FFFFFF; font-size: 38px; font-weight: 800; margin: 10px 0; font-family: "Courier New", monospace;'>{value}</div>
-        <div style='color: #48BB78; font-size: 13px; font-weight: 600;'>{subtitle}</div>
+                border: 1px solid #2A2D35; border-radius: 15px; padding: 22px;
+                box-shadow: 0 8px 20px rgba(0,0,0,0.4); border-left: 4px solid {border_color};
+                font-family: sans-serif; transition: transform 0.3s ease;'>
+        <div style='color: #A0AEC0; font-size: 12px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;'>{title}</div>
+        <div style='color: #FFFFFF; font-size: 32px; font-weight: 800; margin: 8px 0; font-family: "Courier New", monospace;'>{value}</div>
+        <div style='color: #48BB78; font-size: 12px; font-weight: 600;'>{subtitle}</div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
@@ -130,7 +124,7 @@ def seed_rules():
             'apple tv', 'paramount', 'crunchyroll', 'youtube premium', 'youtube music', 'apple music', 'deezer', 'amazon music',
             'google one', 'icloud', 'microsoft', 'office 365', 'dropbox', 'adobe', 'canva', 'chatgpt', 'openai', 'notion', 'zoom',
             'smart fit', 'bluefit', 'gympass', 'wellhub', 'totalpass',
-            'claro', 'vivo', 'tim', 'oi',
+            'claro', 'vivo', 'tim',
             'ifood', 'rappi', 'ze delivery',
             'xbox', 'playstation', 'nintendo',
             'sem parar', 'veloe', 'conectcar',
@@ -149,10 +143,18 @@ seed_rules()
 st.sidebar.markdown("<h1 style='text-align: center; color: #FF8A00; font-weight: 900; margin-bottom: 0;'>💳 Wallet</h1>", unsafe_allow_html=True)
 st.sidebar.markdown("<p style='text-align: center; color: #888; font-size: 12px; margin-bottom: 30px;'>FinanceHub Premium</p>", unsafe_allow_html=True)
 
-menu = st.sidebar.radio("Menu Principal", ["Dashboard", "Metas & Custos Fixos", "Importar Fatura", "Configurações", "Assistente IA"])
+menu = st.sidebar.radio("Menu Principal", [
+    "Dashboard", 
+    "Análise & Comparador", 
+    "Metas & Custos Fixos", 
+    "Simulador & Reserva", 
+    "Importar Fatura", 
+    "Configurações", 
+    "Assistente IA"
+])
 
 # ==========================================
-# TELA 1: DASHBOARD
+# TELA 1: DASHBOARD (COM FORECAST E INSIGHTS)
 # ==========================================
 if menu == "Dashboard":
     try:
@@ -175,16 +177,64 @@ if menu == "Dashboard":
             df_filtrado = df[(df['month_year'].isin(meses_selecionados)) & (df['category'].isin(categorias_selecionadas))]
             
             if df_filtrado.empty:
-                st.info("Nenhum dado encontrado.")
+                st.info("Nenhum dado encontrado para os filtros selecionados.")
             else:
                 despesas = df_filtrado[df_filtrado['type'] == 'EXPENSE']
                 total_gasto = despesas['amount'].sum()
                 
-                col_metric, _ = st.columns([1, 2]) 
-                with col_metric:
-                    render_metric_card("Balance Total (Gastos)", f"R$ {total_gasto:,.2f}", f"Analisando {len(meses_selecionados)} mês(es)")
+                # --- CÁLCULO DE FORECAST (PREVISÃO DE FECHAMENTO) ---
+                mes_mais_recente = meses_selecionados[0] if meses_selecionados else meses_disponiveis[0]
+                df_mes_recente = df[(df['month_year'] == mes_mais_recente) & (df['type'] == 'EXPENSE')]
+                
+                gasto_mes_recente = df_mes_recente['amount'].sum()
+                dias_com_dados = df_mes_recente['day'].max() if not df_mes_recente.empty else 1
+                
+                ano_f, mes_f = map(int, mes_mais_recente.split('-'))
+                total_dias_mes = calendar.monthrange(ano_f, mes_f)[1]
+                
+                media_diaria = gasto_mes_recente / max(dias_com_dados, 1)
+                previsao_fechamento = media_diaria * total_dias_mes
+                
+                # --- MÉTRICAS DE TOPO ---
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    render_metric_card("Balance Total (Filtrado)", f"R$ {total_gasto:,.2f}", f"Analisando {len(meses_selecionados)} mês(es)")
+                with col_m2:
+                    render_metric_card("Previsão de Fechamento (" + mes_mais_recente + ")", f"R$ {previsao_fechamento:,.2f}", f"Média de R$ {media_diaria:,.2f}/dia (Dia {dias_com_dados} de {total_dias_mes})", border_color="#3182CE")
+                
                 st.write("") 
                 
+                # --- INSIGHTS AUTOMÁTICOS & ALERTAS DE ANOMALIAS ---
+                if len(meses_disponiveis) >= 2:
+                    mes_atual_str = meses_disponiveis[0]
+                    mes_ant_str = meses_disponiveis[1]
+                    
+                    df_atual_cat = df[(df['month_year'] == mes_atual_str) & (df['type'] == 'EXPENSE')].groupby('category')['amount'].sum()
+                    df_ant_cat = df[(df['month_year'] == mes_ant_str) & (df['type'] == 'EXPENSE')].groupby('category')['amount'].sum()
+                    
+                    alertas = []
+                    elogios = []
+                    
+                    for cat in df_atual_cat.index:
+                        v_atual = df_atual_cat.get(cat, 0)
+                        v_ant = df_ant_cat.get(cat, 0)
+                        
+                        if v_ant > 100: # Analisa apenas categorias relevantes
+                            var_pct = ((v_atual - v_ant) / v_ant) * 100
+                            if var_pct >= 30:
+                                alertas.append(f"⚠️ **{cat}**: subiu **{var_pct:.1f}%** em relação a {mes_ant_str} (+R$ {v_atual - v_ant:,.2f}).")
+                            elif var_pct <= -20:
+                                elogios.append(f"🎉 **{cat}**: reduziu **{abs(var_pct):.1f}%** comparado a {mes_ant_str} (-R$ {v_ant - v_atual:,.2f}).")
+                    
+                    if alertas or elogios:
+                        with st.container(border=True):
+                            st.markdown("##### 💡 Insights Automáticos da IA")
+                            for a in alertas[:2]:
+                                st.warning(a)
+                            for e in elogios[:2]:
+                                st.success(e)
+                
+                # --- GRÁFICOS ---
                 col_g1, col_g2 = st.columns(2)
                 with col_g1:
                     with st.container(border=True):
@@ -221,8 +271,9 @@ if menu == "Dashboard":
                         fig4.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', yaxis_title=None, xaxis_title=None, xaxis=dict(showgrid=False, visible=False))
                         st.plotly_chart(fig4, use_container_width=True)
                 
+                # --- AG-GRID: TABELA EDITÁVEL ---
                 with st.expander("🛠️ Modo Planilha: Editar Histórico e Exportar", expanded=False):
-                    st.markdown("<p style='color: #FF8A00; font-size: 14px;'>Dê um duplo clique na coluna 'Categoria' para alterar os dados. Depois clique em Salvar.</p>", unsafe_allow_html=True)
+                    st.markdown("<p style='color: #FF8A00; font-size: 14px;'>Dê duplo-clique na coluna 'Categoria' para alterar os dados. Depois clique em Salvar.</p>", unsafe_allow_html=True)
                     df_mostrar = df_filtrado[['id', 'date', 'description', 'category', 'amount', 'type']].copy()
                     df_mostrar['date'] = df_mostrar['date'].dt.strftime('%d/%m/%Y')
                     
@@ -243,7 +294,7 @@ if menu == "Dashboard":
                     
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
-                        if st.button("💾 Salvar Edições do Ag-Grid", type="primary", use_container_width=True):
+                        if st.button("💾 Salvar Edições do Ag-Grid", type="primary", use_container_width=True, key="btn_save_grid_dash"):
                             db = SessionLocal()
                             alteracoes = 0
                             df_editado = pd.DataFrame(grid_response['data'])
@@ -262,13 +313,90 @@ if menu == "Dashboard":
                         buffer = io.BytesIO()
                         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                             df_mostrar.drop(columns=['id', 'type']).to_excel(writer, index=False, sheet_name='Transações')
-                        st.download_button("📥 Exportar Relatório .XLSX", data=buffer.getvalue(), file_name=f"Relatorio_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                        st.download_button("📥 Exportar Relatório .XLSX", data=buffer.getvalue(), file_name=f"Relatorio_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="btn_export_dash")
 
     except Exception as e:
         st.error(f"Erro: {e}")
 
 # ==========================================
-# TELA 2: METAS & CUSTOS FIXOS
+# TELA 2: ANÁLISE & COMPARADOR MÊS A MÊS
+# ==========================================
+elif menu == "Análise & Comparador":
+    st.header("⚔️ Comparativo Mês a Mês (Side-by-Side)")
+    df = pd.read_sql("SELECT * FROM transactions WHERE type='EXPENSE'", engine)
+    
+    if df.empty:
+        st.warning("Importe transações para usar o comparador.")
+    else:
+        df['date'] = pd.to_datetime(df['date'])
+        df['month_year'] = df['date'].dt.to_period('M').astype(str)
+        meses = sorted(df['month_year'].unique(), reverse=True)
+        
+        if len(meses) < 2:
+            st.info("Você precisa ter pelo menos 2 meses importados para fazer a comparação.")
+        else:
+            col_sel1, col_sel2 = st.columns(2)
+            with col_sel1:
+                mes_a = st.selectbox("Selecione o Mês A (Base):", meses, index=1, key="sel_mes_a")
+            with col_sel2:
+                mes_b = st.selectbox("Selecione o Mês B (Comparação):", meses, index=0, key="sel_mes_b")
+                
+            df_a = df[df['month_year'] == mes_a]
+            df_b = df[df['month_year'] == mes_b]
+            
+            total_a = df_a['amount'].sum()
+            total_b = df_b['amount'].sum()
+            diff_abs = total_b - total_a
+            diff_pct = (diff_abs / total_a) * 100 if total_a > 0 else 0
+            
+            st.write("")
+            c_kpi1, c_kpi2, c_kpi3 = st.columns(3)
+            with c_kpi1:
+                render_metric_card(f"Total {mes_a}", f"R$ {total_a:,.2f}")
+            with c_kpi2:
+                render_metric_card(f"Total {mes_b}", f"R$ {total_b:,.2f}")
+            with c_kpi3:
+                cor = "#E53E3E" if diff_abs > 0 else "#38A169"
+                sinal = "+" if diff_abs > 0 else ""
+                render_metric_card("Variação do Período", f"{sinal}R$ {diff_abs:,.2f}", f"{sinal}{diff_pct:.1f}% vs {mes_a}", border_color=cor)
+                
+            st.write("")
+            
+            # Gráfico Comparativo Agrupado por Categoria
+            cat_a = df_a.groupby('category')['amount'].sum().reset_index()
+            cat_b = df_b.groupby('category')['amount'].sum().reset_index()
+            
+            cat_a['Mês'] = mes_a
+            cat_b['Mês'] = mes_b
+            
+            df_comp = pd.concat([cat_a, cat_b])
+            
+            with st.container(border=True):
+                fig_comp = px.bar(
+                    df_comp, x='category', y='amount', color='Mês', barmode='group',
+                    title=f"📊 Comparação por Categoria: {mes_a} vs {mes_b}",
+                    color_discrete_map={mes_a: '#CBD5E0', mes_b: '#FF8A00'}
+                )
+                fig_comp.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis_title=None, yaxis_title=None, xaxis=dict(showgrid=False), yaxis=dict(showgrid=False)
+                )
+                st.plotly_chart(fig_comp, use_container_width=True)
+
+            # Tabela Detalhada de Diferenças
+            st.subheader("📋 Detalhamento da Variação por Categoria")
+            df_pivot = df_comp.pivot(index='category', columns='Mês', values='amount').fillna(0).reset_index()
+            
+            if mes_a in df_pivot.columns and mes_b in df_pivot.columns:
+                df_pivot['Diferença (R$)'] = df_pivot[mes_b] - df_pivot[mes_a]
+                df_pivot['Variação (%)'] = ((df_pivot['Diferença (R$)'] / df_pivot[mes_a]) * 100).fillna(0)
+                df_pivot = df_pivot.sort_values('Diferença (R$)', ascending=False)
+                
+                df_pivot.columns = ['Categoria', f'Gastos {mes_a}', f'Gastos {mes_b}', 'Diferença (R$)', 'Variação (%)']
+                st.dataframe(df_pivot, use_container_width=True, hide_index=True)
+
+# ==========================================
+# TELA 3: METAS & CUSTOS FIXOS
 # ==========================================
 elif menu == "Metas & Custos Fixos":
     st.header("🎯 Inteligência Financeira")
@@ -289,9 +417,9 @@ elif menu == "Metas & Custos Fixos":
             
             with col1:
                 st.markdown("<div style='background: #14171F; padding: 20px; border-radius: 10px; border: 1px solid #2A2D35;'>", unsafe_allow_html=True)
-                cat_meta = st.selectbox("Categoria", sorted(df['category'].unique()))
-                val_meta = st.number_input("Teto Mensal (R$)", min_value=0.0, step=100.0)
-                if st.button("Definir Budget", type="primary", use_container_width=True):
+                cat_meta = st.selectbox("Categoria", sorted(df['category'].unique()), key="sel_cat_meta")
+                val_meta = st.number_input("Teto Mensal (R$)", min_value=0.0, step=100.0, key="num_val_meta")
+                if st.button("Definir Budget", type="primary", use_container_width=True, key="btn_def_budget"):
                     meta_existente = db.query(Budget).filter_by(category=cat_meta).first()
                     if meta_existente: meta_existente.limit_amount = val_meta
                     else: db.add(Budget(category=cat_meta, limit_amount=val_meta))
@@ -333,7 +461,6 @@ elif menu == "Metas & Custos Fixos":
             if not assinaturas_comuns:
                 st.warning("Sua lista de assinaturas conhecidas está vazia. Adicione termos abaixo.")
             else:
-                # O \b impede falsos positivos como encontrar 'oi' em 'goimage'
                 padrao = r'\b(' + '|'.join(assinaturas_comuns) + r')\b'
                 df_assinaturas = df[df['description'].str.lower().str.contains(padrao, na=False, regex=True)]
                 
@@ -353,7 +480,6 @@ elif menu == "Metas & Custos Fixos":
                     AgGrid(assinaturas, fit_columns_on_grid_load=True, theme="alpine")
 
             st.markdown("---")
-            # --- GERENCIADOR DA LISTA DE ASSINATURAS ---
             with st.expander("⚙️ Gerenciar Lista de Assinaturas Conhecidas (Adicionar/Remover)"):
                 col_add, col_del = st.columns(2)
                 
@@ -374,7 +500,6 @@ elif menu == "Metas & Custos Fixos":
                     df_regras_sub = pd.read_sql("SELECT id, keyword as 'Assinatura' FROM subscription_rules ORDER BY keyword", engine)
                     st.dataframe(df_regras_sub, use_container_width=True, hide_index=True, height=150)
                     
-                    # ADICIONADA A KEY 'num_del_sub' AQUI PARA MATAR O ERRO DE ID DUPLICADO
                     sub_id_del = st.number_input("ID do item para excluir da lista:", min_value=0, step=1, key="num_del_sub")
                     if st.button("Excluir Assinatura", key="btn_del_sub") and sub_id_del > 0:
                         db.query(SubscriptionRule).filter_by(id=sub_id_del).delete()
@@ -384,14 +509,94 @@ elif menu == "Metas & Custos Fixos":
     db.close()
 
 # ==========================================
-# TELA 3: IMPORTAÇÃO E MAGIA
+# TELA 4: SIMULADOR DE RESERVA & INVESTIMENTOS
+# ==========================================
+elif menu == "Simulador & Reserva":
+    st.header("🛡️ Simulador de Reserva de Emergência & Investimentos")
+    df = pd.read_sql("SELECT * FROM transactions WHERE type='EXPENSE'", engine)
+    
+    # Média de custo mensal do usuário
+    if not df.empty:
+        df['month_year'] = pd.to_datetime(df['date']).dt.to_period('M').astype(str)
+        media_custo_mensal = df.groupby('month_year')['amount'].sum().mean()
+    else:
+        media_custo_mensal = 3000.0
+        
+    col_sim1, col_sim2 = st.columns([1, 2])
+    
+    with col_sim1:
+        st.markdown("<div style='background: #14171F; padding: 20px; border-radius: 10px; border: 1px solid #2A2D35;'>", unsafe_allow_html=True)
+        st.subheader("⚙️ Parâmetros")
+        
+        custo_base = st.number_input("Custo de Vida Mensal (R$):", value=float(round(media_custo_mensal, 2)), step=100.0, key="sim_custo")
+        meses_reserva = st.slider("Meses de Proteção Desejados:", min_value=3, max_value=12, value=6, key="sim_meses")
+        
+        valor_guardado = st.number_input("Valor Atual Já Guardado (R$):", value=1000.0, step=500.0, key="sim_guardado")
+        aporte_mensal = st.number_input("Aporte Mensal Estimado (R$):", value=500.0, step=100.0, key="sim_aporte")
+        taxa_cdi = st.number_input("Rendimento Estimado (% ao ano - CDI/Selic):", value=10.5, step=0.5, key="sim_taxa")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    with col_sim2:
+        meta_reserva = custo_base * meses_reserva
+        falta_reserva = max(meta_reserva - valor_guardado, 0.0)
+        
+        c_r1, c_r2 = st.columns(2)
+        with c_r1:
+            render_metric_card(f"Meta da Reserva ({meses_reserva} Meses)", f"R$ {meta_reserva:,.2f}", f"Proteção para R$ {custo_base:,.2f}/mês")
+        with c_r2:
+            cor_f = "#48BB78" if falta_reserva == 0 else "#FF8A00"
+            txt_f = "Reserva Concluída! 🎉" if falta_reserva == 0 else f"Faltam R$ {falta_reserva:,.2f}"
+            render_metric_card("Status Atual", f"R$ {valor_guardado:,.2f}", txt_f, border_color=cor_f)
+            
+        st.write("")
+        st.subheader("📈 Projeção Patrimonial com Juros Compostos")
+        
+        # Cálculo de Juros Compostos Mês a Mês (36 meses)
+        i_mensal = ((1 + (taxa_cdi / 100)) ** (1 / 12)) - 1
+        
+        meses_proj = 36
+        dados_proj = []
+        saldo_atual = valor_guardado
+        total_aportado = valor_guardado
+        
+        for m in range(1, meses_proj + 1):
+            rendimento = saldo_atual * i_mensal
+            saldo_atual += aporte_mensal + rendimento
+            total_aportado += aporte_mensal
+            
+            dados_proj.append({
+                'Mês': m,
+                'Saldo Total': round(saldo_atual, 2),
+                'Total Aportado': round(total_aportado, 2),
+                'Juros Acumulados': round(saldo_atual - total_aportado, 2)
+            })
+            
+        df_proj = pd.DataFrame(dados_proj)
+        
+        with st.container(border=True):
+            fig_proj = go.Figure()
+            fig_proj.add_trace(go.Scatter(x=df_proj['Mês'], y=df_proj['Saldo Total'], mode='lines', name='Saldo Total (com Juros)', line=dict(color='#FF8A00', width=3)))
+            fig_proj.add_trace(go.Scatter(x=df_proj['Mês'], y=df_proj['Total Aportado'], mode='lines', name='Total do Seu Bolso', line=dict(color='#CBD5E0', dash='dash')))
+            
+            # Linha da Meta
+            fig_proj.add_hline(y=meta_reserva, line_dash="dot", line_color="#48BB78", annotation_text="Meta da Reserva", annotation_position="top left")
+            
+            fig_proj.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Meses", yaxis_title="Valor (R$)",
+                xaxis=dict(showgrid=False), yaxis=dict(showgrid=False)
+            )
+            st.plotly_chart(fig_proj, use_container_width=True)
+
+# ==========================================
+# TELA 5: IMPORTAÇÃO E MAGIA
 # ==========================================
 elif menu == "Importar Fatura":
     st.header("📥 Processamento e Triagem")
     arquivos = st.file_uploader("Drop seus arquivos .csv aqui (C6 Bank)", type=["csv"], accept_multiple_files=True)
     
     if arquivos:
-        if st.button("🚀 Processar Dumps", type="primary"):
+        if st.button("🚀 Processar Dumps", type="primary", key="btn_process_csv"):
             try:
                 db = SessionLocal()
                 regras = {r.keyword.lower(): r.category for r in db.query(CategoryRule).all()}
@@ -444,7 +649,7 @@ elif menu == "Importar Fatura":
         st.write("A IA classificará compras marcadas como 'Outros' usando suas próprias categorias.")
         api_key_import = st.text_input("Sua Key do AI Studio:", type="password", key="api_magic")
         
-        if st.button("Executar Triagem IA", type="primary", use_container_width=True):
+        if st.button("Executar Triagem IA", type="primary", use_container_width=True, key="btn_exec_magic"):
             if not api_key_import: st.warning("Chave ausente.")
             else:
                 db = SessionLocal()
@@ -471,7 +676,7 @@ elif menu == "Importar Fatura":
                 db.close()
 
 # ==========================================
-# TELA 4: CONFIGURAÇÕES
+# TELA 6: CONFIGURAÇÕES
 # ==========================================
 elif menu == "Configurações":
     st.header("⚙️ Motor de Regras")
@@ -492,7 +697,6 @@ elif menu == "Configurações":
         regras = pd.read_sql("SELECT id, keyword as 'Palavra Chave', category as 'Categoria' FROM category_rules", engine)
         if not regras.empty:
             AgGrid(regras, fit_columns_on_grid_load=True, theme="alpine")
-            # ADICIONADA A KEY 'num_del_regra' AQUI
             if st.button("Purgar Regra via ID", key="btn_del_regra") and (del_id := st.number_input("ID para excluir da lista:", min_value=0, step=1, key="num_del_regra")) > 0:
                 db.query(CategoryRule).filter_by(id=del_id).delete()
                 db.commit()
@@ -500,7 +704,7 @@ elif menu == "Configurações":
     db.close()
 
 # ==========================================
-# TELA 5: ASSISTENTE IA
+# TELA 7: ASSISTENTE IA
 # ==========================================
 elif menu == "Assistente IA":
     st.header("🧠 Oráculo Financeiro")
