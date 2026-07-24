@@ -71,10 +71,20 @@ def render_metric_card(title, value, subtitle="", border_color="#FF8A00"):
     st.markdown(html, unsafe_allow_html=True)
 
 # ==========================================
-# BANCO DE DADOS
+# BANCO DE DADOS (CONEXÃO PERSISTENTE NA NUVEM)
 # ==========================================
-DB_PATH = 'financehub_v8.db'
-engine = create_engine(f'sqlite:///{DB_PATH}')
+# Se estiver rodando no Streamlit Cloud com Secrets configurado
+if "postgres" in st.secrets:
+    DATABASE_URL = st.secrets["postgres"]["db_url"]
+else:
+    # Fallback local caso esteja rodando direto no seu computador
+    DATABASE_URL = 'sqlite:///financehub_v8.db'
+
+# Corrige prefixo antigo de URLs se necessário
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(DATABASE_URL)
 Base = declarative_base()
 
 class Transaction(Base):
