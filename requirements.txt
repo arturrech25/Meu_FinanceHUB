@@ -7,3 +7,4 @@ openpyxl
 streamlit-aggrid
 streamlit-lottie
 requests
+psycopg2-binary
